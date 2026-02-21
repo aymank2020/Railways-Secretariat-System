@@ -107,7 +107,7 @@ class PasswordService {
 
   Uint8List _int32BigEndian(int value) {
     final b = ByteData(4);
-    b.setUint32(0, value, Endian.big);
+    b.setUint32(0, value);
     return b.buffer.asUint8List();
   }
 

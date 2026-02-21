@@ -20,6 +20,7 @@ import 'screens/sadir/sadir_list_screen.dart';
 import 'screens/sadir/sadir_search_screen.dart';
 import 'screens/users/users_list_screen.dart';
 import 'screens/documents/documents_list_screen.dart';
+import 'screens/history/deleted_records_screen.dart';
 import 'utils/app_theme.dart';
 
 void main() async {
@@ -92,6 +93,7 @@ class MyApp extends StatelessWidget {
               '/sadir/search': (context) => const SadirSearchScreen(),
               '/users': (context) => const UsersListScreen(),
               '/documents': (context) => const DocumentsListScreen(),
+              '/history/deleted': (context) => const DeletedRecordsScreen(),
             },
           );
         },

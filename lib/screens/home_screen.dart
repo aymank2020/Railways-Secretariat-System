@@ -9,6 +9,7 @@ import '../providers/auth_provider.dart';
 import '../providers/theme_provider.dart';
 import 'dashboard_screen.dart';
 import 'documents/documents_list_screen.dart';
+import 'history/deleted_records_screen.dart';
 import 'sadir/sadir_form_screen.dart';
 import 'sadir/sadir_list_screen.dart';
 import 'users/users_list_screen.dart';
@@ -74,6 +75,17 @@ class _HomeScreenState extends State<HomeScreen> {
           title: 'المستخدمون',
           icon: Icons.people,
           screen: UsersListScreen(),
+        ),
+      );
+    }
+
+    if (auth.isAdmin) {
+      items.add(
+        const _NavItem(
+          key: 'deleted_records',
+          title: 'سجل المحذوفات',
+          icon: Icons.history,
+          screen: DeletedRecordsScreen(),
         ),
       );
     }

@@ -1,7 +1,8 @@
-﻿import 'dart:typed_data';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
+import '../models/deleted_record_model.dart';
 import '../models/sadir_model.dart';
 import '../models/warid_model.dart';
 import '../services/database_service.dart';
@@ -27,6 +28,7 @@ class DocumentProvider extends ChangeNotifier {
 
   List<WaridModel> _waridList = [];
   List<SadirModel> _sadirList = [];
+  List<DeletedRecordModel> _deletedRecords = [];
   WaridModel? _selectedWarid;
   SadirModel? _selectedSadir;
   Map<String, dynamic> _statistics = {};
@@ -36,6 +38,7 @@ class DocumentProvider extends ChangeNotifier {
 
   List<WaridModel> get waridList => _waridList;
   List<SadirModel> get sadirList => _sadirList;
+  List<DeletedRecordModel> get deletedRecords => _deletedRecords;
   WaridModel? get selectedWarid => _selectedWarid;
   SadirModel? get selectedSadir => _selectedSadir;
   Map<String, dynamic> get statistics => _statistics;
@@ -179,6 +182,121 @@ class DocumentProvider extends ChangeNotifier {
       return true;
     } catch (e) {
       _error = 'حدث خطأ أثناء حذف بيانات الصادر: $e';
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<void> loadDeletedRecords({
+    String? documentType,
+    bool includeRestored = false,
+    String? search,
+  }) async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      _deletedRecords = await _db.getDeletedRecords(
+        documentType: documentType,
+        includeRestored: includeRestored,
+        search: search,
+      );
+      _error = null;
+    } catch (e) {
+      _error = 'حدث خطأ أثناء تحميل سجل المحذوفات: $e';
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
+  Future<bool> restoreDeletedRecord({
+    required int deletedRecordId,
+    required String qaidNumber,
+    required int userId,
+    required String userName,
+  }) async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      await _db.restoreDeletedRecord(
+        deletedRecordId: deletedRecordId,
+        qaidNumber: qaidNumber,
+        userId: userId,
+        userName: userName,
+      );
+      _waridList = await _db.getAllWarid();
+      _sadirList = await _db.getAllSadir();
+      _error = null;
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = 'حدث خطأ أثناء استرجاع السجل المحذوف: $e';
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> restoreWaridFromDeletedWithEdits({
+    required int deletedRecordId,
+    required WaridModel warid,
+    required int userId,
+    required String userName,
+  }) async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      await _db.restoreDeletedRecordWithPayload(
+        deletedRecordId: deletedRecordId,
+        documentType: 'warid',
+        payload: warid.toMap(),
+        qaidNumber: warid.qaidNumber,
+        userId: userId,
+        userName: userName,
+      );
+      _waridList = await _db.getAllWarid();
+      _error = null;
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = 'حدث خطأ أثناء استرجاع الوارد بعد التعديل: $e';
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  Future<bool> restoreSadirFromDeletedWithEdits({
+    required int deletedRecordId,
+    required SadirModel sadir,
+    required int userId,
+    required String userName,
+  }) async {
+    _isLoading = true;
+    notifyListeners();
+
+    try {
+      await _db.restoreDeletedRecordWithPayload(
+        deletedRecordId: deletedRecordId,
+        documentType: 'sadir',
+        payload: sadir.toMap(),
+        qaidNumber: sadir.qaidNumber,
+        userId: userId,
+        userName: userName,
+      );
+      _sadirList = await _db.getAllSadir();
+      _error = null;
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      _error = 'حدث خطأ أثناء استرجاع الصادر بعد التعديل: $e';
       _isLoading = false;
       notifyListeners();
       return false;
@@ -409,4 +527,3 @@ class DocumentProvider extends ChangeNotifier {
     }
   }
 }
-

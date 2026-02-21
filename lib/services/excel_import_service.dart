@@ -1,4 +1,4 @@
-﻿import 'dart:typed_data';
+import 'dart:typed_data';
 
 import 'package:excel/excel.dart';
 
@@ -308,9 +308,6 @@ class ExcelImportService {
           isOther: _readBool(row, columnMap['is_other']),
           otherDetails:
               _nullableText(_readText(row, columnMap['other_details'])),
-          // Attachments are uploaded manually after import.
-          fileName: null,
-          filePath: null,
           needsFollowup: _readBool(row, columnMap['needs_followup']),
           followupNotes:
               _nullableText(_readText(row, columnMap['followup_notes'])),
@@ -429,9 +426,6 @@ class ExcelImportService {
           isOther: _readBool(row, columnMap['is_other']),
           otherDetails:
               _nullableText(_readText(row, columnMap['other_details'])),
-          // Attachments are uploaded manually after import.
-          fileName: null,
-          filePath: null,
           needsFollowup: _readBool(row, columnMap['needs_followup']),
           followupNotes:
               _nullableText(_readText(row, columnMap['followup_notes'])),

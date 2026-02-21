@@ -20,12 +20,9 @@ class AppTheme {
     colorScheme: const ColorScheme.light(
       primary: primaryColor,
       secondary: accentColor,
-      surface: Colors.white,
       error: errorColor,
-      onPrimary: Colors.white,
       onSecondary: Colors.white,
       onSurface: Colors.black87,
-      onError: Colors.white,
     ),
     scaffoldBackgroundColor: const Color(0xFFF5F5F5),
     appBarTheme: const AppBarTheme(
@@ -147,10 +144,6 @@ class AppTheme {
       secondary: accentColor,
       surface: Color(0xFF1E1E1E),
       error: Color(0xFFEF5350),
-      onPrimary: Colors.black,
-      onSecondary: Colors.black,
-      onSurface: Colors.white,
-      onError: Colors.black,
     ),
     scaffoldBackgroundColor: const Color(0xFF121212),
     appBarTheme: const AppBarTheme(

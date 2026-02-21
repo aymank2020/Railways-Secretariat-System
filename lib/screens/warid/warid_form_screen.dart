@@ -10,8 +10,19 @@ import '../../utils/helpers.dart';
 
 class WaridFormScreen extends StatefulWidget {
   final WaridModel? editWarid;
+  final WaridModel? initialWarid;
+  final int? restoreDeletedRecordId;
 
-  const WaridFormScreen({super.key, this.editWarid});
+  const WaridFormScreen({
+    super.key,
+    this.editWarid,
+    this.initialWarid,
+    this.restoreDeletedRecordId,
+  }) : assert(
+          editWarid == null ||
+              (initialWarid == null && restoreDeletedRecordId == null),
+          'Cannot edit existing record and restore deleted record at the same time.',
+        );
 
   @override
   State<WaridFormScreen> createState() => _WaridFormScreenState();
@@ -55,18 +66,21 @@ class _WaridFormScreenState extends State<WaridFormScreen> {
   final _followupNotesController = TextEditingController();
 
   bool get isEditing => widget.editWarid != null;
+  bool get isRestoring =>
+      widget.initialWarid != null && widget.restoreDeletedRecordId != null;
 
   @override
   void initState() {
     super.initState();
     if (isEditing) {
-      _loadWaridData();
+      _loadWaridData(widget.editWarid!);
+    } else if (isRestoring) {
+      _loadWaridData(widget.initialWarid!);
     }
     _loadClassificationOptions();
   }
 
-  void _loadWaridData() {
-    final w = widget.editWarid!;
+  void _loadWaridData(WaridModel w) {
     _qaidNumberController.text = w.qaidNumber;
     _qaidDate = w.qaidDate;
     _sourceAdminController.text = w.sourceAdministration;
@@ -326,7 +340,9 @@ class _WaridFormScreenState extends State<WaridFormScreen> {
       followupNotes: _followupNotesController.text.trim().isEmpty
           ? null
           : _followupNotesController.text.trim(),
-      createdAt: isEditing ? widget.editWarid!.createdAt : DateTime.now(),
+      createdAt: isEditing
+          ? widget.editWarid!.createdAt
+          : (isRestoring ? widget.initialWarid!.createdAt : DateTime.now()),
       createdBy: authProvider.currentUser?.id,
       createdByName: authProvider.currentUser?.fullName,
     );
@@ -337,6 +353,13 @@ class _WaridFormScreenState extends State<WaridFormScreen> {
         warid,
         authProvider.currentUser!.id!,
         authProvider.currentUser!.fullName,
+      );
+    } else if (isRestoring) {
+      success = await docProvider.restoreWaridFromDeletedWithEdits(
+        deletedRecordId: widget.restoreDeletedRecordId!,
+        warid: warid,
+        userId: authProvider.currentUser!.id!,
+        userName: authProvider.currentUser!.fullName,
       );
     } else {
       success = await docProvider.addWarid(warid);
@@ -349,9 +372,13 @@ class _WaridFormScreenState extends State<WaridFormScreen> {
     if (success) {
       Helpers.showSnackBar(
         context,
-        isEditing ? 'تم تحديث البيانات بنجاح' : 'تم إضافة البيانات بنجاح',
+        isEditing
+            ? 'تم تحديث البيانات بنجاح'
+            : (isRestoring
+                ? 'تم استرجاع السجل بعد التعديل بنجاح'
+                : 'تم إضافة البيانات بنجاح'),
       );
-      Navigator.of(context).pop();
+      Navigator.of(context).pop(true);
       return;
     }
 
@@ -376,12 +403,19 @@ class _WaridFormScreenState extends State<WaridFormScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(isEditing ? 'تعديل وارد' : 'وارد جديد'),
+        title: Text(
+          isEditing
+              ? 'تعديل وارد'
+              : (isRestoring ? 'استرجاع وارد مع تعديل' : 'وارد جديد'),
+        ),
         actions: [
           TextButton.icon(
             onPressed: _save,
             icon: const Icon(Icons.save, color: Colors.white),
-            label: const Text('حفظ', style: TextStyle(color: Colors.white)),
+            label: Text(
+              isRestoring ? 'استرجاع' : 'حفظ',
+              style: const TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -455,7 +489,6 @@ class _WaridFormScreenState extends State<WaridFormScreen> {
                         required: true,
                         maxLines: 2,
                       ),
-                      firstFlex: 1,
                       secondFlex: 3,
                     ),
                   ],
@@ -496,7 +529,6 @@ class _WaridFormScreenState extends State<WaridFormScreen> {
                           },
                         ),
                         firstFlex: 2,
-                        secondFlex: 1,
                       ),
                       if (i < 2) const SizedBox(height: 12),
                     ],
@@ -676,7 +708,7 @@ class _WaridFormScreenState extends State<WaridFormScreen> {
                   onPressed: _save,
                   icon: const Icon(Icons.save),
                   label: Text(
-                    isEditing ? 'تحديث' : 'حفظ',
+                    isEditing ? 'تحديث' : (isRestoring ? 'استرجاع' : 'حفظ'),
                     style: const TextStyle(fontSize: 18),
                   ),
                 ),

@@ -1,11 +1,14 @@
-﻿import 'package:data_table_2/data_table_2.dart';
+import 'package:data_table_2/data_table_2.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:open_filex/open_filex.dart';
 import 'package:provider/provider.dart';
 
 import '../../models/warid_model.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/document_provider.dart';
+import '../../services/documents_export_service.dart';
 import '../../utils/helpers.dart';
 import 'warid_form_screen.dart';
 
@@ -18,6 +21,44 @@ class WaridListScreen extends StatefulWidget {
 
 class _WaridListScreenState extends State<WaridListScreen> {
   final _searchController = TextEditingController();
+  final _documentsExportService = DocumentsExportService();
+  final Set<int> _selectedWaridIds = <int>{};
+
+  bool _hasAttachment(WaridModel warid) {
+    return (warid.filePath != null && warid.filePath!.trim().isNotEmpty) ||
+        (warid.fileName != null && warid.fileName!.trim().isNotEmpty);
+  }
+
+  Future<void> _openAttachment(WaridModel warid) async {
+    final path = warid.filePath?.trim() ?? '';
+    if (path.isEmpty) {
+      Helpers.showSnackBar(context, 'لا يوجد مل�? مر�?ق لهذا السجل',
+          isError: true);
+      return;
+    }
+
+    if (kIsWeb) {
+      Helpers.showSnackBar(
+        context,
+        '�?تح المل�?ات المحلية غير مدعوم من نسخة الويب. استخدم نسخة Windows أو Android.',
+        isError: true,
+      );
+      return;
+    }
+
+    final result = await OpenFilex.open(path);
+    if (!mounted) {
+      return;
+    }
+
+    if (result.type != ResultType.done) {
+      Helpers.showSnackBar(
+        context,
+        'تعذر �?تح المل�?: ${result.message}',
+        isError: true,
+      );
+    }
+  }
 
   @override
   void initState() {
@@ -36,8 +77,8 @@ class _WaridListScreenState extends State<WaridListScreen> {
   Future<void> _deleteWarid(WaridModel warid) async {
     final confirmed = await Helpers.showConfirmationDialog(
       context,
-      title: 'تأكيد الحذف',
-      message: 'هل أنت متأكد من حذف هذا السجل؟',
+      title: 'تأكيد الحذ�?',
+      message: 'هل أنت متأكد من حذ�? هذا السجل؟',
       isDangerous: true,
     );
 
@@ -59,7 +100,10 @@ class _WaridListScreenState extends State<WaridListScreen> {
     }
 
     if (success) {
-      Helpers.showSnackBar(context, 'تم الحذف بنجاح');
+      if (warid.id != null) {
+        setState(() => _selectedWaridIds.remove(warid.id));
+      }
+      Helpers.showSnackBar(context, 'تم الحذ�? بنجاح');
     } else {
       Helpers.showSnackBar(context, docProvider.error ?? 'حدث خطأ',
           isError: true);
@@ -67,7 +111,123 @@ class _WaridListScreenState extends State<WaridListScreen> {
   }
 
   void _performSearch(DocumentProvider docProvider) {
+    setState(_selectedWaridIds.clear);
     docProvider.loadWarid(search: _searchController.text.trim());
+  }
+
+  bool _isWaridSelectable(WaridModel warid) => warid.id != null;
+
+  bool _isWaridSelected(WaridModel warid) {
+    final id = warid.id;
+    return id != null && _selectedWaridIds.contains(id);
+  }
+
+  List<WaridModel> _getSelectedWarid(List<WaridModel> waridList) {
+    return waridList.where(_isWaridSelected).toList();
+  }
+
+  void _toggleWaridSelection(WaridModel warid, bool? selected) {
+    final id = warid.id;
+    if (id == null) {
+      return;
+    }
+
+    setState(() {
+      if (selected ?? false) {
+        _selectedWaridIds.add(id);
+      } else {
+        _selectedWaridIds.remove(id);
+      }
+    });
+  }
+
+  void _toggleSelectAllWarid(List<WaridModel> waridList, bool selectAll) {
+    setState(() {
+      _selectedWaridIds.clear();
+      if (selectAll) {
+        _selectedWaridIds.addAll(
+          waridList.map((warid) => warid.id).whereType<int>(),
+        );
+      }
+    });
+  }
+
+  Future<void> _showExportOptions(List<WaridModel> waridList) async {
+    final selected = _getSelectedWarid(waridList);
+    if (selected.isEmpty) {
+      Helpers.showSnackBar(context, 'يرجى تحديد سجل واحد على الأقل',
+          isError: true);
+      return;
+    }
+
+    final format = await showModalBottomSheet<ExportFormat>(
+      context: context,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              const ListTile(
+                title: Text(
+                  'اختر صيغة التصدير',
+                  style: TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ),
+              ListTile(
+                leading: const Icon(Icons.table_chart),
+                title: const Text('Excel (.xlsx)'),
+                onTap: () => Navigator.of(sheetContext).pop(ExportFormat.excel),
+              ),
+              ListTile(
+                leading: const Icon(Icons.description_outlined),
+                title: const Text('Word (.doc)'),
+                onTap: () => Navigator.of(sheetContext).pop(ExportFormat.word),
+              ),
+              ListTile(
+                leading: const Icon(Icons.code),
+                title: const Text('JSON (.json)'),
+                onTap: () => Navigator.of(sheetContext).pop(ExportFormat.json),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+
+    if (format == null || !mounted) {
+      return;
+    }
+
+    await _exportSelectedWarid(format, selected);
+  }
+
+  Future<void> _exportSelectedWarid(
+      ExportFormat format, List<WaridModel> selected) async {
+    Helpers.showLoadingDialog(context, message: 'جاري تجهيز مل�? التصدير...');
+
+    try {
+      final outputPath = await _documentsExportService.exportWarid(
+        records: selected,
+        format: format,
+      );
+
+      if (!mounted) {
+        return;
+      }
+      Helpers.showSnackBar(context, 'تم ح�?ظ المل�?: $outputPath',
+          duration: const Duration(seconds: 4));
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+      Helpers.showSnackBar(context, 'تعذر تصدير البيانات: $e', isError: true);
+    } finally {
+      if (mounted) {
+        Helpers.hideLoadingDialog(context);
+      }
+    }
   }
 
   Future<void> _importWaridExcel() async {
@@ -91,14 +251,15 @@ class _WaridListScreenState extends State<WaridListScreen> {
     final file = picked.files.single;
     final fileBytes = file.bytes;
     if (fileBytes == null) {
-      Helpers.showSnackBar(context, 'تعذر قراءة الملف. يرجى المحاولة مرة أخرى.',
+      Helpers.showSnackBar(
+          context, 'تعذر قراءة المل�?. يرجى المحاولة مرة أخرى.',
           isError: true);
       return;
     }
 
     final docProvider = Provider.of<DocumentProvider>(context, listen: false);
 
-    Helpers.showLoadingDialog(context, message: 'جاري استيراد ملف Excel...');
+    Helpers.showLoadingDialog(context, message: 'جاري استيراد مل�? Excel...');
     final importResult = await docProvider.importWaridFromExcel(
       fileBytes: fileBytes,
       fileName: file.name,
@@ -129,14 +290,14 @@ class _WaridListScreenState extends State<WaridListScreen> {
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('إجمالي الصفوف: ${result.totalRows}'),
+                Text('إجمالي الص�?و�?: ${result.totalRows}'),
                 const SizedBox(height: 8),
                 Text('تم الاستيراد: ${result.importedRows}'),
                 const SizedBox(height: 8),
-                Text('فشل: ${result.failedRows}'),
+                Text('�?شل: ${result.failedRows}'),
                 const SizedBox(height: 12),
                 const Text(
-                  'ملاحظة: المرفقات لا تُستورد من Excel ويجب رفعها يدويًا لكل سجل.',
+                  'ملاحظة: المر�?قات لا ت�?ستورد من Excel ويجب ر�?عها يدويًا لكل سجل.',
                   style: TextStyle(fontSize: 12, color: Colors.black54),
                 ),
                 if (hasErrors) ...[
@@ -176,8 +337,10 @@ class _WaridListScreenState extends State<WaridListScreen> {
             ? IconButton(
                 icon: const Icon(Icons.clear),
                 onPressed: () {
-                  _searchController.clear();
-                  setState(() {});
+                  setState(() {
+                    _searchController.clear();
+                    _selectedWaridIds.clear();
+                  });
                   docProvider.loadWarid();
                 },
               )
@@ -191,8 +354,13 @@ class _WaridListScreenState extends State<WaridListScreen> {
     );
   }
 
-  Widget _buildActionButtons(
-      AuthProvider authProvider, DocumentProvider docProvider) {
+  Widget _buildActionButtons(AuthProvider authProvider,
+      DocumentProvider docProvider, List<WaridModel> waridList) {
+    final selectableCount =
+        waridList.where((warid) => _isWaridSelectable(warid)).length;
+    final selectedCount = _getSelectedWarid(waridList).length;
+    final allSelected = selectableCount > 0 && selectedCount == selectableCount;
+
     return Wrap(
       spacing: 8,
       runSpacing: 8,
@@ -200,13 +368,36 @@ class _WaridListScreenState extends State<WaridListScreen> {
         ElevatedButton.icon(
           onPressed: () => _performSearch(docProvider),
           icon: const Icon(Icons.search),
-          label: const Text('بحث'),
+          label: const Text('\u0628\u062D\u062B'),
         ),
         if (authProvider.canImportExcel)
           ElevatedButton.icon(
             onPressed: _importWaridExcel,
             icon: const Icon(Icons.upload_file),
-            label: const Text('رفع Excel'),
+            label: const Text('\u0631\u0641\u0639 Excel'),
+          ),
+        OutlinedButton.icon(
+          onPressed: selectableCount == 0
+              ? null
+              : () => _toggleSelectAllWarid(waridList, !allSelected),
+          icon: Icon(
+            allSelected ? Icons.check_box : Icons.check_box_outline_blank,
+          ),
+          label: Text(allSelected
+              ? '\u0625\u0644\u063A\u0627\u0621 \u0627\u0644\u062A\u062D\u062F\u064A\u062F'
+              : '\u062A\u062D\u062F\u064A\u062F \u0627\u0644\u0643\u0644'),
+        ),
+        ElevatedButton.icon(
+          onPressed:
+              selectedCount == 0 ? null : () => _showExportOptions(waridList),
+          icon: const Icon(Icons.download),
+          label: const Text('\u062A\u0635\u062F\u064A\u0631'),
+        ),
+        if (selectedCount > 0)
+          Chip(
+            avatar: const Icon(Icons.check, size: 16),
+            label: Text(
+                '\u062A\u0645 \u062A\u062D\u062F\u064A\u062F $selectedCount'),
           ),
         if (authProvider.canManageWarid)
           ElevatedButton.icon(
@@ -216,9 +407,29 @@ class _WaridListScreenState extends State<WaridListScreen> {
               );
             },
             icon: const Icon(Icons.add),
-            label: const Text('جديد'),
+            label: const Text('\u062C\u062F\u064A\u062F'),
           ),
       ],
+    );
+  }
+
+  Widget _buildFollowupBadge(bool needsFollowup) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: needsFollowup
+            ? Colors.red.withValues(alpha: 0.12)
+            : Colors.grey.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        needsFollowup ? 'يحتاج متابعة' : 'لا يحتاج متابعة',
+        style: TextStyle(
+          color: needsFollowup ? Colors.red : Colors.grey.shade700,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
     );
   }
 
@@ -231,6 +442,12 @@ class _WaridListScreenState extends State<WaridListScreen> {
           children: [
             Row(
               children: [
+                Checkbox(
+                  value: _isWaridSelected(warid),
+                  onChanged: _isWaridSelectable(warid)
+                      ? (value) => _toggleWaridSelection(warid, value)
+                      : null,
+                ),
                 Expanded(
                   child: Text(
                     'رقم القيد: ${warid.qaidNumber}',
@@ -258,25 +475,55 @@ class _WaridListScreenState extends State<WaridListScreen> {
               runSpacing: 8,
               children: [
                 Chip(
-                  label: Text('المرفقات: ${warid.attachmentCount}'),
+                  label: Text('المر�?قات: ${warid.attachmentCount}'),
                   visualDensity: VisualDensity.compact,
                 ),
-                Chip(
-                  label: Text(
-                      warid.needsFollowup ? 'يحتاج متابعة' : 'لا يحتاج متابعة'),
-                  visualDensity: VisualDensity.compact,
-                  avatar: Icon(
-                    warid.needsFollowup ? Icons.priority_high : Icons.check,
-                    size: 16,
-                    color: warid.needsFollowup ? Colors.red : Colors.green,
-                  ),
-                ),
+                _buildFollowupBadge(warid.needsFollowup),
               ],
             ),
+            if (_hasAttachment(warid)) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.shade100),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.attach_file, size: 18, color: Colors.blue),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        warid.fileName?.isNotEmpty == true
+                            ? warid.fileName!
+                            : 'مل�? مر�?ق',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: () => _openAttachment(warid),
+                      icon: const Icon(Icons.open_in_new, size: 16),
+                      label: const Text('�?تح'),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 8),
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
+                if (_hasAttachment(warid))
+                  IconButton(
+                    icon: const Icon(Icons.attach_file, color: Colors.teal),
+                    onPressed: () => _openAttachment(warid),
+                    tooltip: '�?تح المر�?ق',
+                  ),
                 if (authProvider.canManageWarid)
                   IconButton(
                     icon: const Icon(Icons.edit, color: Colors.blue),
@@ -310,17 +557,24 @@ class _WaridListScreenState extends State<WaridListScreen> {
           columnSpacing: 12,
           horizontalMargin: 12,
           minWidth: 1000,
+          onSelectAll: (selected) =>
+              _toggleSelectAllWarid(waridList, selected ?? false),
           columns: const [
             DataColumn2(label: Text('رقم القيد'), size: ColumnSize.S),
             DataColumn2(label: Text('التاريخ'), size: ColumnSize.S),
             DataColumn2(label: Text('الجهة'), size: ColumnSize.L),
             DataColumn2(label: Text('الموضوع'), size: ColumnSize.L),
-            DataColumn2(label: Text('المرفقات'), size: ColumnSize.S),
-            DataColumn2(label: Text('متابعة'), size: ColumnSize.S),
-            DataColumn2(label: Text('إجراءات'), size: ColumnSize.M),
+            DataColumn2(label: Text('المر�?قات'), size: ColumnSize.S),
+            DataColumn2(label: Text('المل�?')),
+            DataColumn2(label: Text('متابعة')),
+            DataColumn2(label: Text('إجراءات')),
           ],
           rows: waridList.map((warid) {
             return DataRow2(
+              selected: _isWaridSelected(warid),
+              onSelectChanged: _isWaridSelectable(warid)
+                  ? (selected) => _toggleWaridSelection(warid, selected)
+                  : null,
               cells: [
                 DataCell(Text(warid.qaidNumber)),
                 DataCell(Text(Helpers.formatDate(warid.qaidDate))),
@@ -334,15 +588,24 @@ class _WaridListScreenState extends State<WaridListScreen> {
                 ),
                 DataCell(Text(warid.attachmentCount.toString())),
                 DataCell(
-                  warid.needsFollowup
-                      ? const Icon(Icons.notification_important,
-                          color: Colors.red)
-                      : const Icon(Icons.check_circle, color: Colors.green),
+                  Text(
+                    warid.fileName?.isNotEmpty == true ? warid.fileName! : '-',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
+                DataCell(_buildFollowupBadge(warid.needsFollowup)),
                 DataCell(
                   Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      if (_hasAttachment(warid))
+                        IconButton(
+                          icon:
+                              const Icon(Icons.attach_file, color: Colors.teal),
+                          onPressed: () => _openAttachment(warid),
+                          tooltip: '�?تح المر�?ق',
+                        ),
                       if (authProvider.canManageWarid)
                         IconButton(
                           icon: const Icon(Icons.edit, color: Colors.blue),
@@ -401,7 +664,8 @@ class _WaridListScreenState extends State<WaridListScreen> {
                       const SizedBox(height: 8),
                       Align(
                         alignment: Alignment.centerRight,
-                        child: _buildActionButtons(authProvider, docProvider),
+                        child: _buildActionButtons(
+                            authProvider, docProvider, waridList),
                       ),
                     ],
                   )
@@ -409,7 +673,7 @@ class _WaridListScreenState extends State<WaridListScreen> {
                     children: [
                       Expanded(child: _buildSearchField(docProvider)),
                       const SizedBox(width: 8),
-                      _buildActionButtons(authProvider, docProvider),
+                      _buildActionButtons(authProvider, docProvider, waridList),
                     ],
                   ),
           ),
@@ -434,4 +698,3 @@ class _WaridListScreenState extends State<WaridListScreen> {
     );
   }
 }
-

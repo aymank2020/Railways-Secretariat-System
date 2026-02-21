@@ -10,8 +10,19 @@ import '../../utils/helpers.dart';
 
 class SadirFormScreen extends StatefulWidget {
   final SadirModel? editSadir;
+  final SadirModel? initialSadir;
+  final int? restoreDeletedRecordId;
 
-  const SadirFormScreen({super.key, this.editSadir});
+  const SadirFormScreen({
+    super.key,
+    this.editSadir,
+    this.initialSadir,
+    this.restoreDeletedRecordId,
+  }) : assert(
+          editSadir == null ||
+              (initialSadir == null && restoreDeletedRecordId == null),
+          'Cannot edit existing record and restore deleted record at the same time.',
+        );
 
   @override
   State<SadirFormScreen> createState() => _SadirFormScreenState();
@@ -58,18 +69,21 @@ class _SadirFormScreenState extends State<SadirFormScreen> {
   final _followupNotesController = TextEditingController();
 
   bool get isEditing => widget.editSadir != null;
+  bool get isRestoring =>
+      widget.initialSadir != null && widget.restoreDeletedRecordId != null;
 
   @override
   void initState() {
     super.initState();
     if (isEditing) {
-      _loadSadirData();
+      _loadSadirData(widget.editSadir!);
+    } else if (isRestoring) {
+      _loadSadirData(widget.initialSadir!);
     }
     _loadClassificationOptions();
   }
 
-  void _loadSadirData() {
-    final s = widget.editSadir!;
+  void _loadSadirData(SadirModel s) {
     _qaidNumberController.text = s.qaidNumber;
     _qaidDate = s.qaidDate;
     _destAdminController.text = s.destinationAdministration ?? '';
@@ -336,7 +350,9 @@ class _SadirFormScreenState extends State<SadirFormScreen> {
       followupNotes: _followupNotesController.text.trim().isEmpty
           ? null
           : _followupNotesController.text.trim(),
-      createdAt: isEditing ? widget.editSadir!.createdAt : DateTime.now(),
+      createdAt: isEditing
+          ? widget.editSadir!.createdAt
+          : (isRestoring ? widget.initialSadir!.createdAt : DateTime.now()),
       createdBy: authProvider.currentUser?.id,
       createdByName: authProvider.currentUser?.fullName,
     );
@@ -347,6 +363,13 @@ class _SadirFormScreenState extends State<SadirFormScreen> {
         sadir,
         authProvider.currentUser!.id!,
         authProvider.currentUser!.fullName,
+      );
+    } else if (isRestoring) {
+      success = await docProvider.restoreSadirFromDeletedWithEdits(
+        deletedRecordId: widget.restoreDeletedRecordId!,
+        sadir: sadir,
+        userId: authProvider.currentUser!.id!,
+        userName: authProvider.currentUser!.fullName,
       );
     } else {
       success = await docProvider.addSadir(sadir);
@@ -359,9 +382,13 @@ class _SadirFormScreenState extends State<SadirFormScreen> {
     if (success) {
       Helpers.showSnackBar(
         context,
-        isEditing ? 'تم تحديث البيانات بنجاح' : 'تم إضافة البيانات بنجاح',
+        isEditing
+            ? 'تم تحديث البيانات بنجاح'
+            : (isRestoring
+                ? 'تم استرجاع السجل بعد التعديل بنجاح'
+                : 'تم إضافة البيانات بنجاح'),
       );
-      Navigator.of(context).pop();
+      Navigator.of(context).pop(true);
       return;
     }
 
@@ -386,12 +413,19 @@ class _SadirFormScreenState extends State<SadirFormScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(isEditing ? 'تعديل صادر' : 'صادر جديد'),
+        title: Text(
+          isEditing
+              ? 'تعديل صادر'
+              : (isRestoring ? 'استرجاع صادر مع تعديل' : 'صادر جديد'),
+        ),
         actions: [
           TextButton.icon(
             onPressed: _save,
             icon: const Icon(Icons.save, color: Colors.white),
-            label: const Text('حفظ', style: TextStyle(color: Colors.white)),
+            label: Text(
+              isRestoring ? 'استرجاع' : 'حفظ',
+              style: const TextStyle(color: Colors.white),
+            ),
           ),
         ],
       ),
@@ -464,7 +498,6 @@ class _SadirFormScreenState extends State<SadirFormScreen> {
                         required: true,
                         maxLines: 2,
                       ),
-                      firstFlex: 1,
                       secondFlex: 3,
                     ),
                   ],
@@ -475,21 +508,25 @@ class _SadirFormScreenState extends State<SadirFormScreen> {
               _buildCard(
                 child: Column(
                   children: [
-                    _buildResponsiveRow(
-                      first: RadioListTile<String>(
-                        title: const Text('انتظار'),
-                        value: 'pending',
-                        groupValue: _signatureStatus,
-                        onChanged: (value) => setState(
-                            () => _signatureStatus = value ?? 'pending'),
-                      ),
-                      second: RadioListTile<String>(
-                        title: const Text('حفظ'),
-                        value: 'saved',
-                        groupValue: _signatureStatus,
-                        onChanged: (value) =>
-                            setState(() => _signatureStatus = value ?? 'saved'),
-                      ),
+                    SegmentedButton<String>(
+                      segments: const [
+                        ButtonSegment<String>(
+                          value: 'pending',
+                          label: Text('انتظار'),
+                          icon: Icon(Icons.schedule),
+                        ),
+                        ButtonSegment<String>(
+                          value: 'saved',
+                          label: Text('حفظ'),
+                          icon: Icon(Icons.check_circle_outline),
+                        ),
+                      ],
+                      selected: <String>{_signatureStatus},
+                      onSelectionChanged: (selected) {
+                        setState(() {
+                          _signatureStatus = selected.first;
+                        });
+                      },
                     ),
                     if (_signatureStatus == 'saved') ...[
                       const SizedBox(height: 12),
@@ -538,7 +575,6 @@ class _SadirFormScreenState extends State<SadirFormScreen> {
                           },
                         ),
                         firstFlex: 2,
-                        secondFlex: 1,
                       ),
                       if (i < 2) const SizedBox(height: 12),
                     ],
@@ -718,7 +754,7 @@ class _SadirFormScreenState extends State<SadirFormScreen> {
                   onPressed: _save,
                   icon: const Icon(Icons.save),
                   label: Text(
-                    isEditing ? 'تحديث' : 'حفظ',
+                    isEditing ? 'تحديث' : (isRestoring ? 'استرجاع' : 'حفظ'),
                     style: const TextStyle(fontSize: 18),
                   ),
                 ),

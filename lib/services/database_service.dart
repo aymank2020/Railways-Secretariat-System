@@ -1,12 +1,14 @@
-﻿import 'dart:io';
+import 'dart:io';
 import 'dart:typed_data';
+import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show debugPrint, kDebugMode, kIsWeb;
 import 'package:path/path.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:sqflite_common_ffi_web/sqflite_ffi_web.dart';
-import 'dart:async';
+import '../models/deleted_record_model.dart';
 
 import '../models/sadir_model.dart';
 import '../models/user_model.dart';
@@ -17,8 +19,7 @@ class DatabaseService {
   static final DatabaseService _instance = DatabaseService._internal();
   static Database? _database;
   static bool _webRecoveryAttempted = false;
-  static const int _dbVersion = 5;
-  static const Duration _webDbOpenTimeout = Duration(seconds: 15);
+  static const int _dbVersion = 6;
   static const Duration _webDbQueryTimeout = Duration(seconds: 15);
   static const String _classificationMinistry =
       '\u0627\u0644\u0648\u0632\u0627\u0631\u0629';
@@ -228,6 +229,7 @@ class DatabaseService {
       )
     ''');
 
+    await _ensureDeletedRecordsTable(db);
     await _ensureClassificationOptions(db);
     await _ensureUniqueQaidIndexes(db);
     await _seedDefaultUsers(db);
@@ -279,6 +281,10 @@ class DatabaseService {
     if (oldVersion < 5) {
       await _ensureClassificationOptions(db);
     }
+
+    if (oldVersion < 6) {
+      await _ensureDeletedRecordsTable(db);
+    }
   }
 
   Future<void> _ensurePostOpenData(Database db) async {
@@ -287,6 +293,7 @@ class DatabaseService {
     await _seedDefaultUsers(db);
     await _normalizeBootstrapUsersForWeb(db);
     await _ensureUniqueQaidIndexes(db);
+    await _ensureDeletedRecordsTable(db);
     await _ensureClassificationOptions(db);
   }
 
@@ -397,6 +404,30 @@ class DatabaseService {
       documentType: documentType,
       optionName: optionName,
     );
+  }
+
+  Future<void> _ensureDeletedRecordsTable(Database db) async {
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS deleted_records (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        document_type TEXT NOT NULL,
+        original_record_id INTEGER,
+        archived_payload TEXT NOT NULL,
+        deleted_at TEXT NOT NULL,
+        deleted_by INTEGER,
+        deleted_by_name TEXT,
+        is_restored INTEGER NOT NULL DEFAULT 0,
+        restored_at TEXT,
+        restored_by INTEGER,
+        restored_by_name TEXT,
+        restored_record_id INTEGER
+      )
+    ''');
+
+    await db.execute('''
+      CREATE INDEX IF NOT EXISTS idx_deleted_records_lookup
+      ON deleted_records (document_type, is_restored, deleted_at DESC)
+    ''');
   }
 
   Future<void> _seedDefaultUsers(Database db) async {
@@ -732,7 +763,7 @@ class DatabaseService {
   Future<UserModel?> authenticateUser(String username, String password) async {
     try {
       _debugLog('authenticate start for user=$username');
-      final db = await _withWebTimeout(database, _webDbOpenTimeout);
+      final db = await _withWebTimeout(database);
       _debugLog('authenticate got database handle');
       final maps = await _withWebTimeout(
         db.query(
@@ -838,8 +869,8 @@ class DatabaseService {
       }
     } catch (_) {}
     _database = null;
-    await _withWebTimeout(deleteDatabase('secretariat.db'), _webDbOpenTimeout);
-    _database = await _withWebTimeout(_initDatabase(), _webDbOpenTimeout);
+    await _withWebTimeout(deleteDatabase('secretariat.db'));
+    _database = await _withWebTimeout(_initDatabase());
     _debugLog('web recovery done');
   }
 
@@ -927,14 +958,51 @@ class DatabaseService {
     return id;
   }
 
+  Future<void> _archiveDeletedRecord(
+    DatabaseExecutor executor, {
+    required String documentType,
+    required int originalRecordId,
+    required Map<String, dynamic> payload,
+    int? deletedBy,
+    String? deletedByName,
+  }) async {
+    final archivedPayload = Map<String, dynamic>.from(payload)
+      ..remove('id')
+      ..remove('qaid_number')
+      ..remove('updated_at');
+
+    await executor.insert('deleted_records', {
+      'document_type': _normalizeDocumentType(documentType),
+      'original_record_id': originalRecordId,
+      'archived_payload': jsonEncode(archivedPayload),
+      'deleted_at': DateTime.now().toIso8601String(),
+      'deleted_by': deletedBy,
+      'deleted_by_name': deletedByName,
+      'is_restored': 0,
+    });
+  }
+
   Future<int> deleteWarid(int id, int userId, String userName) async {
     final db = await database;
     final oldData = await getWaridById(id);
-    final result = await db.delete(
-      'warid',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    final result = await db.transaction((txn) async {
+      if (oldData != null) {
+        await _archiveDeletedRecord(
+          txn,
+          documentType: 'warid',
+          originalRecordId: id,
+          payload: oldData.toMap(),
+          deletedBy: userId,
+          deletedByName: userName,
+        );
+      }
+
+      return txn.delete(
+        'warid',
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    });
     await _logAudit(
         'warid', id, 'DELETE', oldData?.toMap(), null, userId, userName);
     return result;
@@ -1058,11 +1126,24 @@ class DatabaseService {
   Future<int> deleteSadir(int id, int userId, String userName) async {
     final db = await database;
     final oldData = await getSadirById(id);
-    final result = await db.delete(
-      'sadir',
-      where: 'id = ?',
-      whereArgs: [id],
-    );
+    final result = await db.transaction((txn) async {
+      if (oldData != null) {
+        await _archiveDeletedRecord(
+          txn,
+          documentType: 'sadir',
+          originalRecordId: id,
+          payload: oldData.toMap(),
+          deletedBy: userId,
+          deletedByName: userName,
+        );
+      }
+
+      return txn.delete(
+        'sadir',
+        where: 'id = ?',
+        whereArgs: [id],
+      );
+    });
     await _logAudit(
         'sadir', id, 'DELETE', oldData?.toMap(), null, userId, userName);
     return result;
@@ -1144,6 +1225,155 @@ class DatabaseService {
     await _logAudit('sadir', id, 'IMPORT', null, data, sadir.createdBy,
         sadir.createdByName);
     return id;
+  }
+
+  Future<List<DeletedRecordModel>> getDeletedRecords({
+    String? documentType,
+    bool includeRestored = false,
+    String? search,
+  }) async {
+    final db = await database;
+    final whereParts = <String>[];
+    final whereArgs = <Object>[];
+
+    if (documentType != null && documentType.trim().isNotEmpty) {
+      whereParts.add('document_type = ?');
+      whereArgs.add(_normalizeDocumentType(documentType));
+    }
+
+    if (!includeRestored) {
+      whereParts.add('is_restored = 0');
+    }
+
+    final rows = await db.query(
+      'deleted_records',
+      where: whereParts.isEmpty ? null : whereParts.join(' AND '),
+      whereArgs: whereArgs.isEmpty ? null : whereArgs,
+      orderBy: 'deleted_at DESC',
+    );
+
+    var records = rows.map(DeletedRecordModel.fromMap).toList();
+    if (search == null || search.trim().isEmpty) {
+      return records;
+    }
+
+    final query = search.trim().toLowerCase();
+    records = records.where((record) => record.matchesSearch(query)).toList();
+    return records;
+  }
+
+  Future<int> restoreDeletedRecord({
+    required int deletedRecordId,
+    required String qaidNumber,
+    required int userId,
+    required String userName,
+  }) async {
+    final db = await database;
+    final deletedRows = await db.query(
+      'deleted_records',
+      where: 'id = ? AND is_restored = 0',
+      whereArgs: [deletedRecordId],
+      limit: 1,
+    );
+    if (deletedRows.isEmpty) {
+      throw StateError('السجل غير متاح للاسترجاع أو تم استرجاعه مسبقًا.');
+    }
+
+    final deletedRecord = DeletedRecordModel.fromMap(deletedRows.first);
+    return restoreDeletedRecordWithPayload(
+      deletedRecordId: deletedRecordId,
+      documentType: deletedRecord.documentType,
+      payload: deletedRecord.archivedPayload,
+      qaidNumber: qaidNumber,
+      userId: userId,
+      userName: userName,
+      auditAction: 'RESTORE',
+    );
+  }
+
+  Future<int> restoreDeletedRecordWithPayload({
+    required int deletedRecordId,
+    required String documentType,
+    required Map<String, dynamic> payload,
+    required String qaidNumber,
+    required int userId,
+    required String userName,
+    String auditAction = 'RESTORE_EDIT',
+  }) async {
+    final db = await database;
+    final deletedRows = await db.query(
+      'deleted_records',
+      where: 'id = ? AND is_restored = 0',
+      whereArgs: [deletedRecordId],
+      limit: 1,
+    );
+
+    if (deletedRows.isEmpty) {
+      throw StateError('السجل غير متاح للاسترجاع أو تم استرجاعه مسبقًا.');
+    }
+
+    final deletedRecord = DeletedRecordModel.fromMap(deletedRows.first);
+    final tableName = _normalizeDocumentType(documentType);
+    if (tableName != _normalizeDocumentType(deletedRecord.documentType)) {
+      throw StateError('نوع السجل المحدد لا يطابق السجل المحذوف.');
+    }
+
+    final normalizedQaid = await _validateAndNormalizeQaidNumber(
+      db,
+      table: tableName,
+      qaidNumber: qaidNumber,
+    );
+
+    final restoredPayload = Map<String, dynamic>.from(payload)
+      ..remove('id')
+      ..remove('qaid_number')
+      ..['qaid_number'] = normalizedQaid;
+    final nowIso = DateTime.now().toIso8601String();
+    restoredPayload['created_at'] ??=
+        deletedRecord.archivedPayload['created_at'] ?? nowIso;
+    restoredPayload['updated_at'] = nowIso;
+
+    late final int restoredId;
+    await db.transaction((txn) async {
+      final lockRows = await txn.query(
+        'deleted_records',
+        columns: ['id', 'is_restored'],
+        where: 'id = ?',
+        whereArgs: [deletedRecordId],
+        limit: 1,
+      );
+      if (lockRows.isEmpty) {
+        throw StateError('تعذر العثور على السجل المحذوف.');
+      }
+      if ((lockRows.first['is_restored'] as int? ?? 0) == 1) {
+        throw StateError('تم استرجاع هذا السجل مسبقًا.');
+      }
+
+      restoredId = await txn.insert(tableName, restoredPayload);
+      await txn.update(
+        'deleted_records',
+        {
+          'is_restored': 1,
+          'restored_at': nowIso,
+          'restored_by': userId,
+          'restored_by_name': userName,
+          'restored_record_id': restoredId,
+        },
+        where: 'id = ?',
+        whereArgs: [deletedRecordId],
+      );
+    });
+
+    await _logAudit(
+      tableName,
+      restoredId,
+      auditAction,
+      null,
+      restoredPayload,
+      userId,
+      userName,
+    );
+    return restoredId;
   }
 
   Future<int> createImportFileRecord({
@@ -1278,4 +1508,3 @@ class DatabaseService {
     _database = null;
   }
 }
-

@@ -1,4 +1,4 @@
-﻿import 'package:data_table_2/data_table_2.dart';
+import 'package:data_table_2/data_table_2.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -92,7 +92,7 @@ class _UsersListScreenState extends State<UsersListScreen> {
       context: context,
       builder: (dialogContext) {
         return StatefulBuilder(
-          builder: (context, setDialogState) {
+          builder: (innerContext, setDialogState) {
             return AlertDialog(
               title: Text(isEditing ? 'تعديل مستخدم' : 'مستخدم جديد'),
               content: Form(
@@ -344,7 +344,7 @@ class _UsersListScreenState extends State<UsersListScreen> {
                           )
                         : await userProvider.addUser(newUser);
 
-                    if (!mounted) {
+                    if (!mounted || !dialogContext.mounted) {
                       return;
                     }
 
@@ -466,8 +466,7 @@ class _UsersListScreenState extends State<UsersListScreen> {
                               DataColumn2(
                                   label: Text('الاسم'), size: ColumnSize.L),
                               DataColumn2(
-                                  label: Text('اسم المستخدم'),
-                                  size: ColumnSize.M),
+                                  label: Text('اسم المستخدم')),
                               DataColumn2(
                                   label: Text('البريد'), size: ColumnSize.L),
                               DataColumn2(
@@ -477,7 +476,7 @@ class _UsersListScreenState extends State<UsersListScreen> {
                               DataColumn2(
                                   label: Text('الحالة'), size: ColumnSize.S),
                               DataColumn2(
-                                  label: Text('إجراءات'), size: ColumnSize.M),
+                                  label: Text('إجراءات')),
                             ],
                             rows: users.map((user) {
                               final permissions = <String>[];
@@ -558,4 +557,3 @@ class _UsersListScreenState extends State<UsersListScreen> {
     );
   }
 }
-
