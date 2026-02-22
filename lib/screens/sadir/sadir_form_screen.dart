@@ -347,6 +347,15 @@ class _SadirFormScreenState extends State<SadirFormScreen> {
       fileName: _fileName,
       filePath: _filePath,
       needsFollowup: _needsFollowup,
+      followupStatus: _needsFollowup
+          ? SadirModel.followupStatusWaitingReply
+          : SadirModel.followupStatusCompleted,
+      followupFileName: isEditing
+          ? widget.editSadir!.followupFileName
+          : (isRestoring ? widget.initialSadir?.followupFileName : null),
+      followupFilePath: isEditing
+          ? widget.editSadir!.followupFilePath
+          : (isRestoring ? widget.initialSadir?.followupFilePath : null),
       followupNotes: _followupNotesController.text.trim().isEmpty
           ? null
           : _followupNotesController.text.trim(),

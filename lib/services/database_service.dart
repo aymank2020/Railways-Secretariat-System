@@ -19,7 +19,7 @@ class DatabaseService {
   static final DatabaseService _instance = DatabaseService._internal();
   static Database? _database;
   static bool _webRecoveryAttempted = false;
-  static const int _dbVersion = 6;
+  static const int _dbVersion = 7;
   static const Duration _webDbQueryTimeout = Duration(seconds: 15);
   static const String _classificationMinistry =
       '\u0627\u0644\u0648\u0632\u0627\u0631\u0629';
@@ -153,6 +153,9 @@ class DatabaseService {
         file_path TEXT,
         needs_followup INTEGER DEFAULT 0,
         followup_notes TEXT,
+        followup_status TEXT DEFAULT 'waiting_reply',
+        followup_file_name TEXT,
+        followup_file_path TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT,
         created_by INTEGER,
@@ -189,6 +192,9 @@ class DatabaseService {
         file_path TEXT,
         needs_followup INTEGER DEFAULT 0,
         followup_notes TEXT,
+        followup_status TEXT DEFAULT 'waiting_reply',
+        followup_file_name TEXT,
+        followup_file_path TEXT,
         created_at TEXT NOT NULL,
         updated_at TEXT,
         created_by INTEGER,
@@ -285,6 +291,10 @@ class DatabaseService {
     if (oldVersion < 6) {
       await _ensureDeletedRecordsTable(db);
     }
+
+    if (oldVersion < 7) {
+      await _ensureFollowupColumns(db);
+    }
   }
 
   Future<void> _ensurePostOpenData(Database db) async {
@@ -295,6 +305,36 @@ class DatabaseService {
     await _ensureUniqueQaidIndexes(db);
     await _ensureDeletedRecordsTable(db);
     await _ensureClassificationOptions(db);
+    await _ensureFollowupColumns(db);
+  }
+
+  Future<void> _ensureFollowupColumns(Database db) async {
+    await _addColumnIfNotExists(
+        db, 'warid', "followup_status TEXT DEFAULT 'waiting_reply'");
+    await _addColumnIfNotExists(db, 'warid', 'followup_file_name TEXT');
+    await _addColumnIfNotExists(db, 'warid', 'followup_file_path TEXT');
+    await _addColumnIfNotExists(
+        db, 'sadir', "followup_status TEXT DEFAULT 'waiting_reply'");
+    await _addColumnIfNotExists(db, 'sadir', 'followup_file_name TEXT');
+    await _addColumnIfNotExists(db, 'sadir', 'followup_file_path TEXT');
+
+    await db.execute('''
+      UPDATE warid
+      SET followup_status = CASE
+        WHEN COALESCE(needs_followup, 0) = 1 THEN 'waiting_reply'
+        ELSE 'completed'
+      END
+      WHERE followup_status IS NULL OR TRIM(followup_status) = ''
+    ''');
+
+    await db.execute('''
+      UPDATE sadir
+      SET followup_status = CASE
+        WHEN COALESCE(needs_followup, 0) = 1 THEN 'waiting_reply'
+        ELSE 'completed'
+      END
+      WHERE followup_status IS NULL OR TRIM(followup_status) = ''
+    ''');
   }
 
   Future<void> _addColumnIfNotExists(

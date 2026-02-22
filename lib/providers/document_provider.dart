@@ -22,6 +22,18 @@ class DocumentImportResult {
   });
 }
 
+class BatchDeleteResult {
+  final int deletedCount;
+  final int failedCount;
+
+  const BatchDeleteResult({
+    required this.deletedCount,
+    required this.failedCount,
+  });
+
+  bool get hasFailures => failedCount > 0;
+}
+
 class DocumentProvider extends ChangeNotifier {
   final DatabaseService _db = DatabaseService();
   final ExcelImportService _excelImportService = ExcelImportService();
@@ -114,6 +126,50 @@ class DocumentProvider extends ChangeNotifier {
     }
   }
 
+  Future<BatchDeleteResult> deleteWaridBatch(
+      List<int> ids, int userId, String userName) async {
+    final uniqueIds = ids.toSet().toList();
+    if (uniqueIds.isEmpty) {
+      return const BatchDeleteResult(deletedCount: 0, failedCount: 0);
+    }
+
+    _isLoading = true;
+    notifyListeners();
+
+    var deletedCount = 0;
+    var failedCount = 0;
+
+    try {
+      for (final id in uniqueIds) {
+        try {
+          await _db.deleteWarid(id, userId, userName);
+          deletedCount++;
+        } catch (_) {
+          failedCount++;
+        }
+      }
+
+      _waridList = await _db.getAllWarid();
+      _error = failedCount > 0
+          ? 'تم حذف $deletedCount سجل(ات) وفشل حذف $failedCount سجل(ات) من الوارد'
+          : null;
+
+      return BatchDeleteResult(
+        deletedCount: deletedCount,
+        failedCount: failedCount,
+      );
+    } catch (e) {
+      _error = 'حدث خطأ أثناء الحذف الجماعي للوارد: $e';
+      return BatchDeleteResult(
+        deletedCount: deletedCount,
+        failedCount: uniqueIds.length - deletedCount,
+      );
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
+
   void selectWarid(WaridModel? warid) {
     _selectedWarid = warid;
     notifyListeners();
@@ -185,6 +241,50 @@ class DocumentProvider extends ChangeNotifier {
       _isLoading = false;
       notifyListeners();
       return false;
+    }
+  }
+
+  Future<BatchDeleteResult> deleteSadirBatch(
+      List<int> ids, int userId, String userName) async {
+    final uniqueIds = ids.toSet().toList();
+    if (uniqueIds.isEmpty) {
+      return const BatchDeleteResult(deletedCount: 0, failedCount: 0);
+    }
+
+    _isLoading = true;
+    notifyListeners();
+
+    var deletedCount = 0;
+    var failedCount = 0;
+
+    try {
+      for (final id in uniqueIds) {
+        try {
+          await _db.deleteSadir(id, userId, userName);
+          deletedCount++;
+        } catch (_) {
+          failedCount++;
+        }
+      }
+
+      _sadirList = await _db.getAllSadir();
+      _error = failedCount > 0
+          ? 'تم حذف $deletedCount سجل(ات) وفشل حذف $failedCount سجل(ات) من الصادر'
+          : null;
+
+      return BatchDeleteResult(
+        deletedCount: deletedCount,
+        failedCount: failedCount,
+      );
+    } catch (e) {
+      _error = 'حدث خطأ أثناء الحذف الجماعي للصادر: $e';
+      return BatchDeleteResult(
+        deletedCount: deletedCount,
+        failedCount: uniqueIds.length - deletedCount,
+      );
+    } finally {
+      _isLoading = false;
+      notifyListeners();
     }
   }
 

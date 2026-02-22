@@ -337,6 +337,15 @@ class _WaridFormScreenState extends State<WaridFormScreen> {
       fileName: _fileName,
       filePath: _filePath,
       needsFollowup: _needsFollowup,
+      followupStatus: _needsFollowup
+          ? WaridModel.followupStatusWaitingReply
+          : WaridModel.followupStatusCompleted,
+      followupFileName: isEditing
+          ? widget.editWarid!.followupFileName
+          : (isRestoring ? widget.initialWarid?.followupFileName : null),
+      followupFilePath: isEditing
+          ? widget.editWarid!.followupFilePath
+          : (isRestoring ? widget.initialWarid?.followupFilePath : null),
       followupNotes: _followupNotesController.text.trim().isEmpty
           ? null
           : _followupNotesController.text.trim(),

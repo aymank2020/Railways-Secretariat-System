@@ -1,17 +1,20 @@
-class SadirModel {
+﻿class SadirModel {
+  static const String followupStatusWaitingReply = 'waiting_reply';
+  static const String followupStatusCompleted = 'completed';
+
   final int? id;
-  final String qaidNumber; // رقم القيد
-  final DateTime qaidDate; // تاريخ القيد
-  final String? destinationAdministration; // الإدارة المرسل إليها
-  final String? letterNumber; // رقم الخطاب
-  final DateTime? letterDate; // تاريخ الخطاب
-  final int attachmentCount; // عدد المرفقات
-  final String subject; // الموضوع
-  final String? notes; // ملاحظات
+  final String qaidNumber;
+  final DateTime qaidDate;
+  final String? destinationAdministration;
+  final String? letterNumber;
+  final DateTime? letterDate;
+  final int attachmentCount;
+  final String subject;
+  final String? notes;
 
   // Signature status
-  final String signatureStatus; // pending, saved
-  final DateTime? signatureDate; // تاريخ التوقيع
+  final String signatureStatus;
+  final DateTime? signatureDate;
 
   // Sent to fields (up to 3)
   final String? sentTo1Name;
@@ -22,18 +25,21 @@ class SadirModel {
   final DateTime? sentTo3DeliveryDate;
 
   // Classification
-  final bool isMinistry; // الوزارة
-  final bool isAuthority; // الهيئة
-  final bool isOther; // جهة أخرى
-  final String? otherDetails; // تفاصيل الجهة الأخرى
+  final bool isMinistry;
+  final bool isAuthority;
+  final bool isOther;
+  final String? otherDetails;
 
-  // File info
-  final String? fileName; // اسم ملف الحفظ
-  final String? filePath; // مسار الملف المرفق
+  // Primary attachment info
+  final String? fileName;
+  final String? filePath;
 
-  // Follow up
-  final bool needsFollowup; // يحتاج لمتابعة
-  final String? followupNotes; // ملاحظات المتابعة
+  // Follow-up
+  final bool needsFollowup;
+  final String? followupNotes;
+  final String followupStatus;
+  final String? followupFileName;
+  final String? followupFilePath;
 
   // Metadata
   final DateTime createdAt;
@@ -67,6 +73,9 @@ class SadirModel {
     this.filePath,
     this.needsFollowup = false,
     this.followupNotes,
+    this.followupStatus = followupStatusWaitingReply,
+    this.followupFileName,
+    this.followupFilePath,
     required this.createdAt,
     this.updatedAt,
     this.createdBy,
@@ -100,6 +109,9 @@ class SadirModel {
       'file_path': filePath,
       'needs_followup': needsFollowup ? 1 : 0,
       'followup_notes': followupNotes,
+      'followup_status': followupStatus,
+      'followup_file_name': followupFileName,
+      'followup_file_path': followupFilePath,
       'created_at': createdAt.toIso8601String(),
       'updated_at': updatedAt?.toIso8601String(),
       'created_by': createdBy,
@@ -108,6 +120,7 @@ class SadirModel {
   }
 
   factory SadirModel.fromMap(Map<String, dynamic> map) {
+    final needsFollowup = map['needs_followup'] == 1;
     return SadirModel(
       id: map['id'],
       qaidNumber: map['qaid_number'],
@@ -142,14 +155,31 @@ class SadirModel {
       otherDetails: map['other_details'],
       fileName: map['file_name'],
       filePath: map['file_path'],
-      needsFollowup: map['needs_followup'] == 1,
+      needsFollowup: needsFollowup,
       followupNotes: map['followup_notes'],
+      followupStatus: _normalizeFollowupStatus(
+        map['followup_status']?.toString(),
+        needsFollowup: needsFollowup,
+      ),
+      followupFileName: map['followup_file_name'],
+      followupFilePath: map['followup_file_path'],
       createdAt: DateTime.parse(map['created_at']),
       updatedAt:
           map['updated_at'] != null ? DateTime.parse(map['updated_at']) : null,
       createdBy: map['created_by'],
       createdByName: map['created_by_name'],
     );
+  }
+
+  static String _normalizeFollowupStatus(
+    String? status, {
+    required bool needsFollowup,
+  }) {
+    final value = status?.trim().toLowerCase();
+    if (value == followupStatusWaitingReply || value == followupStatusCompleted) {
+      return value!;
+    }
+    return needsFollowup ? followupStatusWaitingReply : followupStatusCompleted;
   }
 
   SadirModel copyWith({
@@ -178,6 +208,9 @@ class SadirModel {
     String? filePath,
     bool? needsFollowup,
     String? followupNotes,
+    String? followupStatus,
+    String? followupFileName,
+    String? followupFilePath,
     DateTime? createdAt,
     DateTime? updatedAt,
     int? createdBy,
@@ -210,6 +243,9 @@ class SadirModel {
       filePath: filePath ?? this.filePath,
       needsFollowup: needsFollowup ?? this.needsFollowup,
       followupNotes: followupNotes ?? this.followupNotes,
+      followupStatus: followupStatus ?? this.followupStatus,
+      followupFileName: followupFileName ?? this.followupFileName,
+      followupFilePath: followupFilePath ?? this.followupFilePath,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       createdBy: createdBy ?? this.createdBy,
