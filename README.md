@@ -4,20 +4,31 @@
 
 تطبيق Flutter متكامل لإدارة المراسلات الواردة والصادرة للسكك الحديدية، يعمل على Desktop (Windows/Linux/Mac) و Mobile (Android/iOS).
 
+يدعم النظام وضعين للتشغيل:
+- **الوضع المحلي**: قاعدة بيانات SQLite مباشرة على الجهاز
+- **وضع الخادم**: يتصل بخادم HTTP مركزي (مضمن في المشروع) يدعم عدة مستخدمين
+
 ---
 
 ## المميزات
 
-- ✅ **إدارة الوارد**: تسجيل وتتبع جميع المراسلات الواردة
-- ✅ **إدارة الصادر**: تسجيل وتتبع جميع المراسلات الصادرة
-- ✅ **نظام تسجيل دخول آمن**: مع صلاحيات مختلفة (مدير، مستخدم، مشاهد)
-- ✅ **قاعدة بيانات محلية**: SQLite للتخزين المحلي
-- ✅ **بحث متقدم**: البحث في المراسلات حسب التاريخ والموضوع والجهة
-- ✅ **دعم الملفات**: إرفاق ملفات PDF وصور بالمراسلات
-- ✅ **سجل التعديلات**: تتبع جميع التغييرات على البيانات
-- ✅ **واجهة عربية**: كاملة الدعم للغة العربية
-- ✅ **دعم Desktop**: Windows, Linux, macOS
-- ✅ **دعم Mobile**: Android, iOS
+- **إدارة الوارد (Warid)**: تسجيل وتتبع جميع المراسلات الواردة
+- **إدارة الصادر (Sadir)**: تسجيل وتتبع جميع المراسلات الصادرة
+- **نظام مصادقة آمن**: تسجيل دخول مع صلاحيات مختلفة (مدير، مستخدم، مشاهد)
+- **تشفير بيانات الاعتماد**: كلمات المرور المحفوظة محلياً مشفرة
+- **إعادة المصادقة التلقائية**: عند انتهاء الجلسة يتم تجديدها تلقائياً
+- **بحث متقدم**: البحث في المراسلات حسب التاريخ والموضوع والجهة
+- **دعم الملفات**: إرفاق ملفات PDF وصور بالمراسلات
+- **استيراد Excel**: استيراد بيانات المراسلات من ملفات Excel
+- **تقسيم PDF**: تقسيم ملفات PDF دفعة واحدة
+- **OCR**: أتمتة التعرف الضوئي على الحروف مع قوالب قابلة للتخصيص
+- **سجل التعديلات**: تتبع جميع التغييرات والحذف مع إمكانية الاستعادة
+- **لوحة معلومات**: إحصائيات ومؤشرات أداء
+- **مؤشر اتصال مباشر**: مراقبة حالة الاتصال بالخادم في الوقت الحقيقي
+- **واجهة عربية**: كاملة الدعم للغة العربية (RTL)
+- **وضع مظلم / فاتح**: دعم كامل للثيمات
+- **دعم Desktop**: Windows, Linux, macOS
+- **دعم Mobile**: Android, iOS
 
 ---
 
@@ -45,30 +56,47 @@ cd railway_secretariat
 flutter pub get
 ```
 
-### 3. تشغيل التطبيق
-
-#### Desktop (Windows/Linux/Mac)
+### 3. تشغيل التطبيق (وضع محلي)
 
 ```bash
 # Windows
 flutter run -d windows
 
-# Linux
+# Linux / macOS
 flutter run -d linux
-
-# macOS
 flutter run -d macos
 ```
 
-#### Mobile (Android/iOS)
+### 4. تشغيل التطبيق (وضع الخادم)
+
+#### أ. تشغيل الخادم
 
 ```bash
-# Android
-flutter run -d android
-
-# iOS (يتطلب macOS)
-flutter run -d ios
+dart run lib/server_main.dart
 ```
+
+الخادم يعمل افتراضياً على `http://0.0.0.0:8080`. يمكنك تخصيصه:
+
+| متغير البيئة | الوصف | القيمة الافتراضية |
+|---|---|---|
+| `SECRETARIAT_PORT` | منفذ الخادم | `8080` |
+| `SECRETARIAT_HOST` | عنوان الاستماع | `0.0.0.0` |
+| `SECRETARIAT_DB_PATH` | مسار قاعدة البيانات | `secretariat.db` |
+| `SECRETARIAT_CORS_ORIGINS` | عناوين CORS المسموحة (فاصلة) | `*` |
+| `SECRETARIAT_LOGIN_RATE_LIMIT` | حد محاولات الدخول لكل 5 دقائق | `10` |
+| `SECRETARIAT_LOG_REQUESTS` | تسجيل الطلبات | `true` |
+
+#### ب. تشغيل التطبيق مع عنوان الخادم
+
+```bash
+# عبر متغير بيئة
+SECRETARIAT_API_BASE_URL=http://localhost:8080 flutter run -d windows
+
+# عبر compile-time define
+flutter run -d windows --dart-define=API_BASE_URL=http://localhost:8080
+```
+
+أو قم بتشغيل التطبيق بدون إعدادات مسبقة — سيظهر شاشة إعداد الخادم تلقائياً.
 
 ---
 
@@ -80,32 +108,22 @@ flutter run -d ios
 flutter build windows --release
 ```
 
-الملف التنفيذي يكون في:
+الملف التنفيذي:
 ```
 build/windows/x64/runner/Release/railway_secretariat.exe
 ```
 
-### Linux
+### Linux / macOS
 
 ```bash
 flutter build linux --release
-```
-
-### macOS
-
-```bash
 flutter build macos --release
 ```
 
-### Android
+### Android / iOS
 
 ```bash
 flutter build apk --release
-```
-
-### iOS
-
-```bash
 flutter build ios --release
 ```
 
@@ -118,57 +136,157 @@ flutter build ios --release
 | مدير النظام | admin | admin123 |
 | مستخدم | user | user123 |
 
+> **تنبيه**: قم بتغيير كلمات المرور الافتراضية فوراً بعد أول تسجيل دخول.
+
 ---
 
-## هيكل المشروع
+## هيكل المشروع (Clean Architecture)
 
 ```
 lib/
-├── main.dart                 # نقطة الدخول الرئيسية
-├── models/                   # نماذج البيانات
-│   ├── user_model.dart
-│   ├── warid_model.dart
-│   └── sadir_model.dart
-├── providers/                # إدارة الحالة
-│   ├── auth_provider.dart
-│   ├── document_provider.dart
-│   ├── user_provider.dart
-│   └── theme_provider.dart
-├── screens/                  # الشاشات
-│   ├── login_screen.dart
-│   ├── home_screen.dart
-│   ├── dashboard_screen.dart
-│   ├── warid/
-│   │   ├── warid_form_screen.dart
-│   │   ├── warid_list_screen.dart
-│   │   └── warid_search_screen.dart
-│   ├── sadir/
-│   │   ├── sadir_form_screen.dart
-│   │   ├── sadir_list_screen.dart
-│   │   └── sadir_search_screen.dart
-│   ├── users/
-│   │   └── users_list_screen.dart
-│   └── documents/
-│       └── documents_list_screen.dart
-├── services/                 # الخدمات
-│   └── database_service.dart
-├── utils/                    # الأدوات المساعدة
-│   ├── app_theme.dart
-│   └── helpers.dart
-└── widgets/                  # الويدجات المشتركة
+├── main.dart                         # نقطة الدخول الرئيسية
+├── server_main.dart                  # خادم HTTP المدمج
+│
+├── core/                             # مكونات مشتركة
+│   ├── di/
+│   │   └── app_dependencies.dart     # حقن الاعتماديات (Local/Remote)
+│   ├── network/
+│   │   └── api_client.dart           # عميل HTTP مع retry وre-auth
+│   ├── providers/
+│   │   ├── theme_provider.dart       # إدارة الثيم
+│   │   └── connection_status_provider.dart  # مراقبة حالة الاتصال
+│   └── services/
+│       ├── database_service.dart     # خدمة SQLite
+│       └── server_settings_service.dart
+│
+├── features/                         # الميزات (Feature-based)
+│   ├── auth/
+│   │   ├── data/
+│   │   │   └── repositories/
+│   │   │       ├── database_auth_repository.dart
+│   │   │       ├── http_auth_repository.dart
+│   │   │       ├── encrypted_credentials_repository.dart
+│   │   │       └── shared_prefs_credentials_repository.dart
+│   │   ├── domain/
+│   │   │   ├── repositories/
+│   │   │   │   ├── auth_repository.dart
+│   │   │   │   └── credentials_repository.dart
+│   │   │   └── usecases/
+│   │   │       └── auth_use_cases.dart
+│   │   └── presentation/
+│   │       ├── providers/
+│   │       │   └── auth_provider.dart
+│   │       └── screens/
+│   │           └── login_screen.dart
+│   │
+│   ├── documents/
+│   │   ├── data/
+│   │   │   ├── datasources/
+│   │   │   │   └── excel_import_service.dart
+│   │   │   └── repositories/
+│   │   │       ├── database_document_repository.dart
+│   │   │       └── http_document_repository.dart
+│   │   ├── domain/
+│   │   │   ├── models/
+│   │   │   │   ├── warid_model.dart
+│   │   │   │   └── sadir_model.dart
+│   │   │   ├── repositories/
+│   │   │   │   └── document_repository.dart
+│   │   │   └── usecases/
+│   │   │       └── document_use_cases.dart
+│   │   └── presentation/
+│   │       ├── providers/
+│   │       │   └── document_provider.dart
+│   │       └── screens/
+│   │           ├── warid_form_screen.dart
+│   │           ├── warid_list_screen.dart
+│   │           ├── sadir_form_screen.dart
+│   │           ├── sadir_list_screen.dart
+│   │           └── ...
+│   │
+│   ├── users/                        # (نفس البنية)
+│   ├── ocr/                          # أتمتة OCR
+│   ├── system/                       # إعدادات النظام
+│   ├── theme/                        # إدارة الثيم
+│   ├── history/                      # سجل الحذف والتعديل
+│   └── dashboard/                    # لوحة المعلومات
+│
+├── server/                           # وحدات الخادم
+│   ├── session_store.dart            # جلسات مستمرة (SQLite-backed)
+│   ├── middleware.dart               # تسجيل طلبات، تحديد معدل، CORS
+│   └── helpers.dart                  # أدوات مساعدة للخادم
+│
+├── widgets/                          # ويدجات مشتركة
+│   └── connection_status_indicator.dart
+│
+└── utils/
+    └── app_theme.dart
 ```
+
+---
+
+## البنية المعمارية
+
+### نمط التصميم
+
+يتبع المشروع **Clean Architecture** مع فصل طبقات:
+
+```
+Presentation (Screens + Providers)
+        ↓
+Domain (Use Cases + Repository Interfaces + Models)
+        ↓
+Data (Repository Implementations + Data Sources)
+```
+
+### إدارة الحالة
+
+- **Provider + ChangeNotifier**: لإدارة حالة التطبيق
+- `AuthProvider`: المصادقة وإدارة الجلسة
+- `DocumentProvider`: المراسلات الواردة والصادرة
+- `UserProvider`: إدارة المستخدمين
+- `ThemeProvider`: الوضع المظلم/الفاتح
+- `ConnectionStatusProvider`: مراقبة الاتصال بالخادم
+
+### وضع التشغيل المزدوج
+
+`AppDependencies` يختار تلقائياً بين:
+- **`Database*Repository`**: يستخدم SQLite مباشرة (الوضع المحلي)
+- **`Http*Repository`**: يتصل بالخادم عبر `ApiClient` (وضع الخادم)
+
+### ميزات ApiClient
+
+- **مهلة زمنية**: 30 ثانية لكل طلب (قابلة للتخصيص)
+- **إعادة المحاولة**: 3 محاولات مع تأخير أسي + jitter
+- **إعادة مصادقة تلقائية**: عند 401 يحاول تجديد الجلسة بالبيانات المحفوظة
+
+### ميزات الخادم
+
+- **WAL mode**: أداء أفضل للقراءة/الكتابة المتزامنة
+- **جلسات مستمرة**: تنجو من إعادة التشغيل (SQLite-backed، TTL 8 ساعات)
+- **تحديد المعدل**: حماية نقطة تسجيل الدخول من محاولات القوة الغاشمة
+- **CORS قابل للتخصيص**: عبر متغير بيئة
+- **تسجيل الطلبات**: مع الطريقة والمسار ورمز الحالة والمدة
+- **حذف دفعات**: نقاط نهاية لحذف عدة سجلات دفعة واحدة
+- **تجديد الرمز**: نقطة نهاية `/api/auth/refresh`
+- **إيقاف رشيق**: يغلق الاتصالات بشكل نظيف عند SIGINT/SIGTERM
 
 ---
 
 ## الاعتماديات الرئيسية
 
-- `provider`: إدارة الحالة
-- `sqflite` / `sqflite_common_ffi`: قاعدة البيانات
-- `shared_preferences`: التخزين المؤقت
-- `file_picker`: اختيار الملفات
-- `window_manager`: إدارة نافذة Desktop
-- `data_table_2`: جداول متقدمة
-- `intl`: التعريب والتنسيق
+| الحزمة | الاستخدام |
+|---|---|
+| `provider` | إدارة الحالة |
+| `sqflite` / `sqflite_common_ffi` | قاعدة بيانات SQLite |
+| `shared_preferences` | التخزين المؤقت والإعدادات |
+| `crypto` | تشفير بيانات الاعتماد المحفوظة |
+| `http` | طلبات HTTP |
+| `file_picker` | اختيار الملفات |
+| `window_manager` | إدارة نافذة Desktop |
+| `data_table_2` | جداول متقدمة |
+| `intl` | التعريب والتنسيق |
+| `shelf` | خادم HTTP (الخادم المدمج) |
 
 ---
 
@@ -202,4 +320,4 @@ lib/
 
 نشكر جميع المساهمين في تطوير هذا النظام.
 
-**تم التطوير بواسطة فريق السكك الحديدية** 🚂
+**تم التطوير بواسطة فريق السكك الحديدية**
