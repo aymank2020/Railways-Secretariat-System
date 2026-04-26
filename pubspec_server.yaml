@@ -1,0 +1,24 @@
+name: railway_secretariat
+description: نظام إدارة المراسلات - السكك الحديدية (Server build — no Flutter SDK)
+publish_to: 'none'
+version: 1.0.5+6
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  # Database (pure-Dart FFI backend — no Flutter SDK required)
+  sqflite_common_ffi: ^2.3.2
+
+  # Utilities
+  path: ^1.8.3
+  crypto: ^3.0.7
+
+  # Excel import
+  excel: ^4.0.6
+
+  # HTTP client (used by api_client.dart which is imported by attachment_storage_service)
+  http: ^1.5.0
+
+dev_dependencies:
+  test: ^1.25.0
