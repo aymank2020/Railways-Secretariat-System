@@ -1,6 +1,8 @@
 ﻿import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import 'app_theme.dart';
+
 class Helpers {
   static String formatDate(DateTime? date, {bool includeTime = false}) {
     if (date == null) {
@@ -29,7 +31,7 @@ class Helpers {
     messenger.showSnackBar(
       SnackBar(
         content: Text(message),
-        backgroundColor: isError ? Colors.red : Colors.green,
+        backgroundColor: isError ? AppTheme.errorColor : AppTheme.successColor,
         behavior: SnackBarBehavior.floating,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
         duration: duration ?? Duration(seconds: isError ? 4 : 2),
@@ -59,7 +61,10 @@ class Helpers {
             ElevatedButton(
               onPressed: () => Navigator.of(context).pop(true),
               style: isDangerous
-                  ? ElevatedButton.styleFrom(backgroundColor: Colors.red)
+                  ? ElevatedButton.styleFrom(
+                      backgroundColor: AppTheme.errorColor,
+                      foregroundColor: Colors.white,
+                    )
                   : null,
               child: Text(confirmText),
             ),

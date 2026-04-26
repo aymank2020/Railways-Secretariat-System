@@ -106,7 +106,7 @@ class _ServerSettingsScreenState extends State<ServerSettingsScreen>
     widget.onComplete(saved);
   }
 
-  void _useLocalMode() async {
+  Future<void> _useLocalMode() async {
     await _serverSettingsService.clearServerUrl();
     widget.onComplete(null);
   }

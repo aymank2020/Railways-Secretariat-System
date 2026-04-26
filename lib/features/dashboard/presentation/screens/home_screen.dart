@@ -315,23 +315,42 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       bottomNavigationBar: showRail
           ? null
-          : BottomNavigationBar(
-              currentIndex: _selectedIndex,
-              onTap: (index) {
-                setState(() {
-                  _selectedIndex = index;
-                });
-              },
-              type: BottomNavigationBarType.fixed,
-              showUnselectedLabels: !isCompactScreen,
-              items: [
-                for (final item in navItems)
-                  BottomNavigationBarItem(
-                    icon: Icon(item.icon),
-                    label: item.title,
-                  ),
-              ],
-            ),
+          : navItems.length <= 5
+              ? BottomNavigationBar(
+                  currentIndex: _selectedIndex,
+                  onTap: (index) {
+                    setState(() {
+                      _selectedIndex = index;
+                    });
+                  },
+                  type: BottomNavigationBarType.fixed,
+                  showUnselectedLabels: !isCompactScreen,
+                  items: [
+                    for (final item in navItems)
+                      BottomNavigationBarItem(
+                        icon: Icon(item.icon),
+                        label: item.title,
+                      ),
+                  ],
+                )
+              : NavigationBar(
+                  selectedIndex: _selectedIndex,
+                  onDestinationSelected: (index) {
+                    setState(() {
+                      _selectedIndex = index;
+                    });
+                  },
+                  labelBehavior: isCompactScreen
+                      ? NavigationDestinationLabelBehavior.onlyShowSelected
+                      : NavigationDestinationLabelBehavior.alwaysShow,
+                  destinations: [
+                    for (final item in navItems)
+                      NavigationDestination(
+                        icon: Icon(item.icon),
+                        label: item.title,
+                      ),
+                  ],
+                ),
       floatingActionButton: _buildFab(selectedItem.key, authProvider),
       floatingActionButtonLocation: FloatingActionButtonLocation.startFloat,
     );

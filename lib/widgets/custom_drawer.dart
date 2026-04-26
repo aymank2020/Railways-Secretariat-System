@@ -24,7 +24,11 @@ class CustomDrawer extends StatelessWidget {
           // Header
           UserAccountsDrawerHeader(
             currentAccountPicture: CircleAvatar(
-              child: Text(user?.fullName.substring(0, 1) ?? 'U'),
+              child: Text(
+                (user?.fullName.isNotEmpty == true)
+                    ? user!.fullName[0]
+                    : 'U',
+              ),
             ),
             accountName: Text(user?.fullName ?? ''),
             accountEmail: Text(user?.email ?? ''),
@@ -72,14 +76,21 @@ class CustomDrawer extends StatelessWidget {
             leading: const Icon(Icons.settings),
             title: const Text('الإعدادات'),
             onTap: () {
-              // TODO: Navigate to settings
+              Navigator.of(context).pop();
+              Navigator.of(context).pushNamed('/server-settings');
             },
           ),
           ListTile(
             leading: const Icon(Icons.help),
             title: const Text('المساعدة'),
             onTap: () {
-              // TODO: Show help
+              Navigator.of(context).pop();
+              showAboutDialog(
+                context: context,
+                applicationName: 'نظام إدارة المراسلات',
+                applicationVersion: '1.0.5+6',
+                applicationLegalese: '© 2026 السكك الحديدية',
+              );
             },
           ),
 
