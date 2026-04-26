@@ -13,9 +13,27 @@ class ApiException implements Exception {
   const ApiException(this.statusCode, this.message);
 }
 
+/// Maximum allowed request body size (50 MB).
+const int maxRequestBodyBytes = 50 * 1024 * 1024;
+
 /// Read and parse the JSON body of an HTTP request.
+///
+/// Rejects payloads larger than [maxRequestBodyBytes] to prevent
+/// memory exhaustion from oversized uploads.
 Future<Map<String, dynamic>> readJsonBody(HttpRequest request) async {
-  final content = await utf8.decoder.bind(request).join();
+  final chunks = <List<int>>[];
+  var totalBytes = 0;
+  await for (final chunk in request) {
+    totalBytes += chunk.length;
+    if (totalBytes > maxRequestBodyBytes) {
+      throw const ApiException(
+        HttpStatus.requestEntityTooLarge,
+        'Request body exceeds the maximum allowed size.',
+      );
+    }
+    chunks.add(chunk);
+  }
+  final content = utf8.decode(chunks.expand((c) => c).toList());
   if (content.trim().isEmpty) {
     return <String, dynamic>{};
   }

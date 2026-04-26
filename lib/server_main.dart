@@ -21,7 +21,10 @@ import 'package:railway_secretariat/server/helpers.dart';
 import 'package:railway_secretariat/server/middleware.dart';
 import 'package:railway_secretariat/server/session_store.dart';
 
+final Stopwatch _serverUptime = Stopwatch();
+
 Future<void> main() async {
+  _serverUptime.start();
   final host = Platform.environment['SECRETARIAT_SERVER_HOST'] ?? '0.0.0.0';
   final port = int.tryParse(
         Platform.environment['SECRETARIAT_SERVER_PORT'] ?? '8080',
@@ -95,6 +98,7 @@ Future<void> main() async {
     unawaited(
       _handleRequest(
         request: request,
+        databaseService: databaseService,
         authRepository: authRepository,
         userRepository: userRepository,
         documentRepository: documentRepository,
@@ -150,6 +154,7 @@ void _setupGracefulShutdown(HttpServer server, dynamic db) {
 
 Future<void> _handleRequest({
   required HttpRequest request,
+  required DatabaseService databaseService,
   required DatabaseAuthRepository authRepository,
   required DatabaseUserRepository userRepository,
   required DatabaseDocumentRepository documentRepository,
@@ -184,6 +189,8 @@ Future<void> _handleRequest({
       writeJson(response, <String, dynamic>{
         'status': 'ok',
         'time': DateTime.now().toIso8601String(),
+        'version': '1.0.5+6',
+        'uptime': _serverUptime.elapsed.inSeconds,
       });
       return;
     }
@@ -459,6 +466,22 @@ Future<void> _handleRequest({
       return;
     }
 
+    if (request.method == 'GET' &&
+        path.startsWith('/api/documents/warid/') &&
+        !path.endsWith('/delete')) {
+      requireWaridPermission(session);
+      final id = int.tryParse(path.substring('/api/documents/warid/'.length));
+      if (id == null) {
+        throw const ApiException(HttpStatus.badRequest, 'Invalid warid id.');
+      }
+      final item = await databaseService.getWaridById(id);
+      if (item == null) {
+        throw const ApiException(HttpStatus.notFound, 'Warid record not found.');
+      }
+      writeJson(response, item.toMap());
+      return;
+    }
+
     if (request.method == 'POST' && path == '/api/documents/warid') {
       requireWaridPermission(session);
       final body = await readJsonBody(request);
@@ -563,6 +586,22 @@ Future<void> _handleRequest({
         offset: parseInt(query['offset']),
       );
       writeJson(response, items.map((item) => item.toMap()).toList());
+      return;
+    }
+
+    if (request.method == 'GET' &&
+        path.startsWith('/api/documents/sadir/') &&
+        !path.endsWith('/delete')) {
+      requireSadirPermission(session);
+      final id = int.tryParse(path.substring('/api/documents/sadir/'.length));
+      if (id == null) {
+        throw const ApiException(HttpStatus.badRequest, 'Invalid sadir id.');
+      }
+      final item = await databaseService.getSadirById(id);
+      if (item == null) {
+        throw const ApiException(HttpStatus.notFound, 'Sadir record not found.');
+      }
+      writeJson(response, item.toMap());
       return;
     }
 
@@ -859,6 +898,25 @@ Future<void> _handleRequest({
     }
 
     // -----------------------------------------------------------------------
+    // Audit log
+    // -----------------------------------------------------------------------
+    if (request.method == 'GET' && path == '/api/audit-log') {
+      if (!session.isAdmin) {
+        throw const ApiException(
+          HttpStatus.forbidden,
+          'Only admin users can view audit logs.',
+        );
+      }
+      final query = request.uri.queryParameters;
+      final entries = await databaseService.getAuditLog(
+        recordId: parseInt(query['recordId']),
+        tableName: query['tableName'],
+      );
+      writeJson(response, entries);
+      return;
+    }
+
+    // -----------------------------------------------------------------------
     // System
     // -----------------------------------------------------------------------
     if (request.method == 'POST' && path == '/api/system/reset-db') {
@@ -887,7 +945,9 @@ Future<void> _handleRequest({
     stderr.writeln('Server error: $e');
     stderr.writeln(st);
     response.statusCode = HttpStatus.internalServerError;
-    writeJson(response, <String, dynamic>{'message': e.toString()});
+    writeJson(response, <String, dynamic>{
+      'message': 'Internal server error. Check server logs for details.',
+    });
   } finally {
     timer.stop();
     logger.logResponse(request, response.statusCode, timer);
