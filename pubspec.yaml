@@ -1,7 +1,7 @@
 name: railway_secretariat
 description: نظام إدارة المراسلات - السكك الحديدية
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.5+6
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -35,12 +35,14 @@ dependencies:
   
   # File Handling
   file_picker: ^10.3.10
+  image_picker: ^1.2.0
   open_filex: ^4.3.4
-  permission_handler: ^12.0.1
+  speech_to_text: ^7.3.0
   
   # PDF
   pdf: ^3.10.7
   printing: ^5.11.1
+  image: ^4.3.0
   
   # Date/Time
   intl: ^0.20.2
@@ -50,18 +52,21 @@ dependencies:
   
   # Navigation
   go_router: ^17.1.0
+  http: ^1.5.0
   
   # Responsive
   responsive_framework: ^1.1.1
   
   # Desktop Support
   window_manager: ^0.5.1
-  bitsdojo_window: ^0.1.6
   
 dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  test: ^1.25.0
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/templates/warid_a3_template.png
