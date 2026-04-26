@@ -3,10 +3,10 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
-  bitsdojo_window_windows
-  permission_handler_windows
+  file_selector_windows
   printing
   screen_retriever_windows
+  speech_to_text_windows
   window_manager
 )
 

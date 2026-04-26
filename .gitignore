@@ -49,3 +49,31 @@ app.*.map.json
 # Temporary files
 *.tmp
 *.temp
+tmp/
+
+# Production build archives
+production_*/
+.production_dir.txt
+
+# JVM crash logs
+hs_err_pid*.log
+
+# Flutter crash logs
+flutter_*.log
+
+# Misc data files (not source)
+*.xlsx
+*.pdf
+*.jpeg
+*.zip
+nul
+
+# Python helper scripts
+*.pyc
+__pycache__/
+
+# Android build reports
+android/build/
+
+# Tesseract OCR data (large binary files)
+tools/tessdata*/
