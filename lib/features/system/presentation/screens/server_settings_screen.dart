@@ -247,7 +247,7 @@ class _ServerSettingsScreenState extends State<ServerSettingsScreen>
                                   decoration: const InputDecoration(
                                     labelText: 'عنوان السيرفر (Server URL)',
                                     prefixIcon: Icon(Icons.link),
-                                    hintText: 'http://192.168.1.15:8080',
+                                    hintText: 'https://xyz.trycloudflare.com',
                                     hintStyle:
                                         TextStyle(fontSize: 14, color: Colors.grey),
                                   ),
@@ -266,7 +266,7 @@ class _ServerSettingsScreenState extends State<ServerSettingsScreen>
                                     if (uri == null ||
                                         !uri.hasScheme ||
                                         uri.host.isEmpty) {
-                                      return 'عنوان غير صالح — مثال: http://192.168.1.15:8080';
+                                      return 'عنوان غير صالح — مثال: https://xyz.trycloudflare.com';
                                     }
                                     return null;
                                   },
@@ -433,10 +433,8 @@ class _ServerSettingsScreenState extends State<ServerSettingsScreen>
                                     const SizedBox(width: 10),
                                     Expanded(
                                       child: Text(
-                                        'للاتصال بالسيرفر من داخل الشبكة استخدم IP المحلي '
-                                        '(مثل 192.168.1.15:8080)\n'
-                                        'من خارج الشبكة استخدم عنوان Tailscale '
-                                        '(مثل 100.x.y.z:8080)',
+                                        'من داخل الشبكة: http://192.168.1.15:8080\n'
+                                        'من خارج الشبكة (Cloudflare Tunnel): https://xyz.trycloudflare.com',
                                         style: TextStyle(
                                           fontSize: 12,
                                           color: scheme.onSurface
