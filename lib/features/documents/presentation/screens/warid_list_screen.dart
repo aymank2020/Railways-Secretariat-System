@@ -1,3 +1,5 @@
+import 'dart:io' show Platform;
+
 import 'package:data_table_2/data_table_2.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -51,6 +53,8 @@ class _WaridListScreenState extends State<WaridListScreen> {
   final _documentsExportService = DocumentsExportService();
   final _a3PrintService = A3PrintService();
   final Set<int> _selectedWaridIds = <int>{};
+  // Speech only supported on Android/iOS
+  static bool get _isSpeechSupported => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
   final SpeechToText _speechToText = SpeechToText();
   static const Map<String, String> _followupStatusLabels = {
     WaridModel.followupStatusWaitingReply:
@@ -282,7 +286,7 @@ class _WaridListScreenState extends State<WaridListScreen> {
 
   @override
   void dispose() {
-    _speechToText.stop();
+    if (_isSpeechSupported) _speechToText.stop();
     _searchController.dispose();
     _horizontalScrollController.dispose();
     _verticalScrollController.dispose();
@@ -819,20 +823,21 @@ class _WaridListScreenState extends State<WaridListScreen> {
         hintText: 'بحث...',
         prefixIcon: const Icon(Icons.search),
         suffixIcon: SizedBox(
-          width: hasText ? 92 : 48,
+          width: hasText ? (_isSpeechSupported ? 92 : 48) : (_isSpeechSupported ? 48 : 0),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.end,
             children: [
-              IconButton(
-                tooltip: _isListening
-                    ? '\u0625\u064a\u0642\u0627\u0641 \u0627\u0644\u0628\u062d\u062b \u0627\u0644\u0635\u0648\u062a\u064a'
-                    : '\u0628\u062d\u062b \u0635\u0648\u062a\u064a',
-                icon: Icon(
-                  _isListening ? Icons.mic : Icons.mic_none,
-                  color: _isListening ? Colors.red : null,
+              if (_isSpeechSupported)
+                IconButton(
+                  tooltip: _isListening
+                      ? '\u0625\u064a\u0642\u0627\u0641 \u0627\u0644\u0628\u062d\u062b \u0627\u0644\u0635\u0648\u062a\u064a'
+                      : '\u0628\u062d\u062b \u0635\u0648\u062a\u064a',
+                  icon: Icon(
+                    _isListening ? Icons.mic : Icons.mic_none,
+                    color: _isListening ? Colors.red : null,
+                  ),
+                  onPressed: () => _toggleVoiceSearch(docProvider),
                 ),
-                onPressed: () => _toggleVoiceSearch(docProvider),
-              ),
               if (hasText)
                 IconButton(
                   icon: const Icon(Icons.clear),
@@ -1024,7 +1029,7 @@ class _WaridListScreenState extends State<WaridListScreen> {
   }
 
   Future<void> _initializeVoiceSearch() async {
-    if (_speechAvailable) {
+    if (!_isSpeechSupported || _speechAvailable) {
       return;
     }
 
