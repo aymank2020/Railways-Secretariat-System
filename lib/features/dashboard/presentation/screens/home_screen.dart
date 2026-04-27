@@ -17,6 +17,7 @@ import 'package:railway_secretariat/features/documents/presentation/screens/wari
 import 'package:railway_secretariat/features/history/presentation/screens/deleted_records_screen.dart';
 import 'package:railway_secretariat/features/ocr/presentation/screens/ocr_automation_screen.dart';
 import 'package:railway_secretariat/features/users/presentation/screens/users_list_screen.dart';
+import 'package:railway_secretariat/core/providers/connection_status_provider.dart';
 import 'package:railway_secretariat/widgets/connection_status_indicator.dart';
 
 class _NavItem {
@@ -170,18 +171,49 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ],
             ),
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              scheme.primary.withValues(alpha: 0.08),
-              Theme.of(context).scaffoldBackgroundColor,
-            ],
+      body: Column(
+        children: [
+          // Disconnection banner — shown when server is unreachable
+          Consumer<ConnectionStatusProvider>(
+            builder: (context, conn, _) {
+              if (conn.state != ServerConnectionState.disconnected) {
+                return const SizedBox.shrink();
+              }
+              return MaterialBanner(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                content: const Text(
+                  'تعذر الاتصال بالسيرفر — تحقق من عنوان السيرفر أو حالة الشبكة',
+                  style: TextStyle(fontSize: 13),
+                ),
+                leading: const Icon(Icons.cloud_off_outlined, color: Color(0xFFD6456A)),
+                backgroundColor: const Color(0xFFFFEBEE),
+                actions: [
+                  TextButton(
+                    onPressed: () => conn.checkNow(),
+                    child: const Text('إعادة المحاولة'),
+                  ),
+                  TextButton(
+                    onPressed: () =>
+                        Navigator.of(context).pushNamed('/server-settings'),
+                    child: const Text('إعدادات السيرفر'),
+                  ),
+                ],
+              );
+            },
           ),
-        ),
-        child: Row(
+          Expanded(
+            child: Container(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    scheme.primary.withValues(alpha: 0.08),
+                    Theme.of(context).scaffoldBackgroundColor,
+                  ],
+                ),
+              ),
+              child: Row(
           children: [
             if (showRail)
               NavigationRail(
@@ -312,6 +344,9 @@ class _HomeScreenState extends State<HomeScreen> {
             Expanded(child: selectedItem.screen),
           ],
         ),
+            ),
+          ),
+        ],
       ),
       bottomNavigationBar: showRail
           ? null
