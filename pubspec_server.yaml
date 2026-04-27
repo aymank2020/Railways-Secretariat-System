@@ -10,6 +10,9 @@ dependencies:
   # Database (pure-Dart FFI backend — no Flutter SDK required)
   sqflite_common_ffi: ^2.3.2
 
+  # sqlite3 system library loader (needed to override native asset lookup on Linux)
+  sqlite3: ^2.4.0
+
   # Utilities
   path: ^1.8.3
   crypto: ^3.0.7

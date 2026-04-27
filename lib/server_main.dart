@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:ffi';
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
+import 'package:sqlite3/open.dart';
 
 import 'package:railway_secretariat/core/services/database_service.dart';
 import 'package:railway_secretariat/features/auth/data/repositories/database_auth_repository.dart';
@@ -25,6 +27,23 @@ final Stopwatch _serverUptime = Stopwatch();
 
 Future<void> main() async {
   _serverUptime.start();
+
+  // On Linux/macOS servers (no Flutter, no bundled sqlite3 native asset),
+  // override sqlite3 to load from the system library explicitly.
+  if (Platform.isLinux) {
+    open.overrideFor(OperatingSystem.linux, () {
+      // Try versioned name first, fall back to unversioned.
+      try {
+        return DynamicLibrary.open('libsqlite3.so.0');
+      } catch (_) {
+        return DynamicLibrary.open('libsqlite3.so');
+      }
+    });
+  } else if (Platform.isMacOS) {
+    open.overrideFor(OperatingSystem.macOS,
+        () => DynamicLibrary.open('libsqlite3.dylib'));
+  }
+
   final host = Platform.environment['SECRETARIAT_SERVER_HOST'] ?? '0.0.0.0';
   final port = int.tryParse(
         Platform.environment['SECRETARIAT_SERVER_PORT'] ?? '8080',
