@@ -9,6 +9,7 @@ import 'package:railway_secretariat/core/platform/foundation_shims.dart'
 import 'package:path/path.dart' as p;
 
 import 'package:railway_secretariat/core/network/api_client.dart';
+import 'package:railway_secretariat/core/services/server_settings_service.dart';
 import 'package:railway_secretariat/core/services/storage_location_service.dart';
 
 class AttachmentStorageService {
@@ -49,7 +50,7 @@ class AttachmentStorageService {
       return null;
     }
 
-    final remoteApiClient = _resolveRemoteApiClient();
+    final remoteApiClient = await _resolveRemoteApiClientAsync();
     if (remoteApiClient != null) {
       try {
         final bytes = await sourceFile.readAsBytes();
@@ -147,7 +148,7 @@ class AttachmentStorageService {
       return resolvedPath;
     }
 
-    final remoteApiClient = _resolveRemoteApiClient();
+    final remoteApiClient = await _resolveRemoteApiClientAsync();
     if (remoteApiClient != null && _isManagedPath(trimmedPath)) {
       final downloaded = await _downloadRemoteAttachmentToCache(
         apiClient: remoteApiClient,
@@ -171,7 +172,7 @@ class AttachmentStorageService {
     }
 
     final trimmedCandidatePath = candidatePath?.trim() ?? '';
-    if (_resolveRemoteApiClient() != null &&
+    if (await _resolveRemoteApiClientAsync() != null &&
         _isManagedPath(trimmedCandidatePath)) {
       return;
     }
@@ -225,8 +226,8 @@ class AttachmentStorageService {
     }
   }
 
-  ApiClient? _resolveRemoteApiClient() {
-    final baseUrl = _resolveRemoteApiBaseUrl();
+  Future<ApiClient?> _resolveRemoteApiClientAsync() async {
+    final baseUrl = await _resolveRemoteApiBaseUrl();
     if (baseUrl == null || baseUrl.isEmpty) {
       _remoteApiClient = null;
       _remoteApiBaseUrl = null;
@@ -242,7 +243,7 @@ class AttachmentStorageService {
     return _remoteApiClient;
   }
 
-  String? _resolveRemoteApiBaseUrl() {
+  Future<String?> _resolveRemoteApiBaseUrl() async {
     const fromDefine = String.fromEnvironment('API_BASE_URL');
     final trimmedDefine = fromDefine.trim();
     if (trimmedDefine.isNotEmpty) {
@@ -255,7 +256,9 @@ class AttachmentStorageService {
         return fromEnv;
       }
     }
-    return null;
+
+    // Fall back to URL saved in SharedPreferences by the user via settings screen.
+    return ServerSettingsService().getSavedServerUrl();
   }
 
   Future<String?> _uploadRemoteAttachment({

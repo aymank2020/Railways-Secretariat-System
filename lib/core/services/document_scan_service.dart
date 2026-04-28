@@ -1,4 +1,7 @@
+import 'dart:io' show Platform;
+
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:image_picker/image_picker.dart';
 
 class ScannedDocument {
@@ -13,6 +16,10 @@ class ScannedDocument {
 
 class DocumentScanService {
   final ImagePicker _imagePicker = ImagePicker();
+
+  /// Returns true when the camera API is available on the current platform.
+  static bool get isCameraSupported =>
+      !kIsWeb && (Platform.isAndroid || Platform.isIOS);
 
   Future<ScannedDocument?> pickFile({
     required List<String> allowedExtensions,
@@ -38,6 +45,10 @@ class DocumentScanService {
   Future<ScannedDocument?> scanFromCamera({
     String fileNamePrefix = 'scan',
   }) async {
+    if (!isCameraSupported) {
+      return null;
+    }
+
     final captured = await _imagePicker.pickImage(
       source: ImageSource.camera,
       imageQuality: 92,

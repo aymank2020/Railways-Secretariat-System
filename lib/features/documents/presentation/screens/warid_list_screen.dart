@@ -6,7 +6,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:open_filex/open_filex.dart';
 import 'package:provider/provider.dart';
-import 'package:speech_to_text/speech_to_text.dart';
+import 'package:speech_to_text/speech_to_text.dart'
+    if (dart.library.js_interop) 'package:speech_to_text/speech_to_text.dart';
 
 import 'package:railway_secretariat/features/documents/data/models/warid_model.dart';
 import 'package:railway_secretariat/features/auth/presentation/providers/auth_provider.dart';
@@ -55,7 +56,8 @@ class _WaridListScreenState extends State<WaridListScreen> {
   final Set<int> _selectedWaridIds = <int>{};
   // Speech only supported on Android/iOS
   static bool get _isSpeechSupported => !kIsWeb && (Platform.isAndroid || Platform.isIOS);
-  final SpeechToText _speechToText = SpeechToText();
+  SpeechToText? __speechToText;
+  SpeechToText get _speechToText => __speechToText ??= SpeechToText();
   static const Map<String, String> _followupStatusLabels = {
     WaridModel.followupStatusWaitingReply:
         '\u0641\u064a \u0627\u0646\u062a\u0638\u0627\u0631 \u0627\u0644\u0631\u062f',

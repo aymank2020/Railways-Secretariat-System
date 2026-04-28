@@ -433,7 +433,7 @@ class _ServerSettingsScreenState extends State<ServerSettingsScreen>
                                     const SizedBox(width: 10),
                                     Expanded(
                                       child: Text(
-                                        'من داخل الشبكة: http://192.168.1.15:8080\n'
+                                        'من داخل الشبكة: http://192.168.x.x:8080\n'
                                         'من خارج الشبكة (Cloudflare Tunnel): https://xyz.trycloudflare.com',
                                         style: TextStyle(
                                           fontSize: 12,

@@ -117,9 +117,15 @@ class Helpers {
   static String getSignatureStatusName(String status) {
     switch (status) {
       case 'pending':
-        return 'انتظار';
+        return 'انتظار التوقيع';
       case 'saved':
-        return 'حفظ';
+        return 'تم التوقيع';
+      case 'signed':
+        return 'موقع';
+      case 'rejected':
+        return 'مرفوض';
+      case 'cancelled':
+        return 'ملغى';
       default:
         return status;
     }

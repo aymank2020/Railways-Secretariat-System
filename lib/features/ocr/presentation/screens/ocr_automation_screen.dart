@@ -120,7 +120,9 @@ class _OcrAutomationScreenState extends State<OcrAutomationScreen> {
         _isLoadingTemplates = false;
       });
       _applyTemplateToControllers(selected);
-    } catch (_) {
+    } catch (e, stackTrace) {
+      // ignore: avoid_print
+      print('[OcrAutomationScreen] Failed to load templates: $e\n$stackTrace');
       if (!mounted) {
         return;
       }
@@ -214,11 +216,12 @@ class _OcrAutomationScreenState extends State<OcrAutomationScreen> {
                 title: const Text('اختيار ملف'),
                 onTap: () => Navigator.of(sheetContext).pop('file'),
               ),
-              ListTile(
-                leading: const Icon(Icons.document_scanner_outlined),
-                title: const Text('اسكان بالكاميرا'),
-                onTap: () => Navigator.of(sheetContext).pop('camera'),
-              ),
+              if (DocumentScanService.isCameraSupported)
+                ListTile(
+                  leading: const Icon(Icons.document_scanner_outlined),
+                  title: const Text('اسكان بالكاميرا'),
+                  onTap: () => Navigator.of(sheetContext).pop('camera'),
+                ),
               const SizedBox(height: 8),
             ],
           ),

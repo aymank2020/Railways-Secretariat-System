@@ -178,11 +178,12 @@ class _WaridFormScreenState extends State<WaridFormScreen> {
                 title: const Text('اختيار ملف'),
                 onTap: () => Navigator.of(sheetContext).pop('file'),
               ),
-              ListTile(
-                leading: const Icon(Icons.document_scanner_outlined),
-                title: const Text('اسكان بالكاميرا'),
-                onTap: () => Navigator.of(sheetContext).pop('camera'),
-              ),
+              if (DocumentScanService.isCameraSupported)
+                ListTile(
+                  leading: const Icon(Icons.document_scanner_outlined),
+                  title: const Text('اسكان بالكاميرا'),
+                  onTap: () => Navigator.of(sheetContext).pop('camera'),
+                ),
               const SizedBox(height: 8),
             ],
           ),

@@ -29,6 +29,11 @@ import 'package:railway_secretariat/features/ocr/presentation/screens/ocr_automa
 import 'package:railway_secretariat/features/system/presentation/screens/server_settings_screen.dart';
 import 'utils/app_theme.dart';
 
+/// Singleton connection status provider reused across full app restarts
+/// (e.g. when the user changes the server URL).  Keeping a single instance
+/// ensures there is only ever one health-check timer running.
+ConnectionStatusProvider? _connectionStatusProvider;
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -139,10 +144,22 @@ class MyApp extends StatelessWidget {
     return MultiProvider(
       providers: [
         Provider<AppDependencies>.value(value: dependencies),
-        ChangeNotifierProvider(
-          create: (_) => ConnectionStatusProvider(
-            serverUrl: dependencies.apiBaseUrl,
-          ),
+        ChangeNotifierProvider<ConnectionStatusProvider>(
+          create: (_) {
+            // Reuse the singleton provider so there is only ever one
+            // health-check timer even when runApp() is called again after
+            // a server URL change.
+            final existing = _connectionStatusProvider;
+            if (existing != null) {
+              existing.updateServerUrl(dependencies.apiBaseUrl);
+              return existing;
+            }
+            final provider = ConnectionStatusProvider(
+              serverUrl: dependencies.apiBaseUrl,
+            );
+            _connectionStatusProvider = provider;
+            return provider;
+          },
         ),
         ChangeNotifierProvider(
           create: (_) => AuthProvider(
