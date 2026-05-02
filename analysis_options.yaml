@@ -17,5 +17,10 @@ analyzer:
   exclude:
     - "**/*.g.dart"
     - "**/*.freezed.dart"
+    # Server-only entrypoint and helpers — analyzed separately via the
+    # Dart-only pubspec_server.yaml build.  When the analyzer runs against
+    # the Flutter pubspec it cannot resolve the sqlite3 / shelf imports.
+    - "lib/server_main.dart"
+    - "lib/server/**"
   errors:
     invalid_annotation_target: ignore

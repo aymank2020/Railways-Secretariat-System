@@ -1,0 +1,56 @@
+# syntax=docker/dockerfile:1.6
+#
+# Compiles the Dart-only server (lib/server_main.dart) into a self-contained
+# native binary using `dart compile exe`. No Flutter SDK required.
+#
+# The resulting image is a thin Debian slim layer that only ships the
+# binary, the system sqlite3 library and a non-root runtime user.
+FROM dart:3.5.4 AS builder
+
+WORKDIR /build
+
+# Cache pub deps separately for faster rebuilds.
+COPY pubspec_server.yaml pubspec.yaml
+RUN dart pub get
+
+# Now copy the actual sources and compile.
+COPY lib ./lib
+RUN dart compile exe lib/server_main.dart -o /build/server_main \
+    && chmod +x /build/server_main
+
+# ---------------------------------------------------------------------------
+FROM debian:bookworm-slim AS runner
+
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl libsqlite3-0 tini \
+ && rm -rf /var/lib/apt/lists/* \
+ && ln -sf libsqlite3.so.0 /usr/lib/x86_64-linux-gnu/libsqlite3.so
+
+# Drop privileges: the binary writes to /opt/secretariat/secretariat_data.
+RUN groupadd --system --gid 10001 secretariat \
+ && useradd --system --uid 10001 --gid 10001 --no-create-home --shell /usr/sbin/nologin secretariat
+
+WORKDIR /opt/secretariat
+RUN mkdir -p /opt/secretariat/secretariat_data /opt/secretariat/logs \
+ && chown -R secretariat:secretariat /opt/secretariat
+
+COPY --from=builder /build/server_main /opt/secretariat/server_main
+RUN chown secretariat:secretariat /opt/secretariat/server_main \
+ && chmod 0755 /opt/secretariat/server_main
+
+USER secretariat
+
+ENV SECRETARIAT_SERVER_HOST=0.0.0.0 \
+    SECRETARIAT_SERVER_PORT=8080 \
+    SECRETARIAT_STORAGE_ROOT=/opt/secretariat/secretariat_data \
+    SECRETARIAT_DB_PATH=/opt/secretariat/secretariat_data/secretariat.db \
+    SECRETARIAT_LOG_REQUESTS=1
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=15s --timeout=3s --start-period=10s --retries=3 \
+  CMD curl --fail --silent --max-time 2 http://127.0.0.1:8080/api/health > /dev/null || exit 1
+
+ENTRYPOINT ["/usr/bin/tini", "--"]
+CMD ["/opt/secretariat/server_main"]

@@ -74,6 +74,16 @@ void main() async {
     return;
   }
 
+  // On the web, default to the same origin that served the app: the API
+  // is reverse-proxied at /api/* by the same nginx that serves the bundle.
+  // This avoids forcing the user through the server-setup screen.
+  if (kIsWeb) {
+    final origin = Uri.base.origin;
+    final dependencies = AppDependencies(overrideApiBaseUrl: origin);
+    runApp(MyApp(dependencies: dependencies));
+    return;
+  }
+
   // No URL configured — show the setup/bootstrap screen.
   runApp(const ServerSetupApp());
 }

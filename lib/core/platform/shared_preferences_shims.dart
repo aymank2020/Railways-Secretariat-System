@@ -15,4 +15,11 @@ class SharedPreferences {
     _data[key] = value;
     return true;
   }
+
+  Future<bool> remove(String key) async {
+    _data.remove(key);
+    return true;
+  }
+
+  bool containsKey(String key) => _data.containsKey(key);
 }
