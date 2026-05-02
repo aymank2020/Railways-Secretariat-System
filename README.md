@@ -79,9 +79,10 @@ dart run lib/server_main.dart
 
 | متغير البيئة | الوصف | القيمة الافتراضية |
 |---|---|---|
-| `SECRETARIAT_PORT` | منفذ الخادم | `8080` |
-| `SECRETARIAT_HOST` | عنوان الاستماع | `0.0.0.0` |
+| `SECRETARIAT_SERVER_PORT` | منفذ الخادم | `8080` |
+| `SECRETARIAT_SERVER_HOST` | عنوان الاستماع | `0.0.0.0` |
 | `SECRETARIAT_DB_PATH` | مسار قاعدة البيانات | `secretariat.db` |
+| `SECRETARIAT_STORAGE_ROOT` | مسار تخزين المرفقات | بجانب قاعدة البيانات |
 | `SECRETARIAT_CORS_ORIGINS` | عناوين CORS المسموحة (فاصلة) | `*` |
 | `SECRETARIAT_LOGIN_RATE_LIMIT` | حد محاولات الدخول لكل 5 دقائق | `10` |
 | `SECRETARIAT_LOG_REQUESTS` | تسجيل الطلبات | `true` |
