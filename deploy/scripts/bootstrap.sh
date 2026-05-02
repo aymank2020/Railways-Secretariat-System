@@ -93,6 +93,10 @@ ensure_repo() {
         git clone --branch "${BRANCH}" "${REPO_URL}" "${APP_DIR}"
     else
         log "Updating existing checkout in ${APP_DIR}"
+        # The checkout may be owned by ${APP_USER} from a previous run while
+        # this script runs as root; whitelist the path so git's
+        # `detected dubious ownership` safety check doesn't abort us.
+        git config --global --add safe.directory "${APP_DIR}" || true
         git -C "${APP_DIR}" fetch --quiet origin "${BRANCH}"
         git -C "${APP_DIR}" checkout --quiet "${BRANCH}"
         git -C "${APP_DIR}" pull --ff-only --quiet origin "${BRANCH}" || \
