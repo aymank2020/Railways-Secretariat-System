@@ -1,0 +1,45 @@
+# Build outputs
+build/
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+**/ios/Flutter/.last_build_id
+
+# Platform-specific build dirs we never need inside Docker.
+android/build/
+android/.gradle/
+ios/build/
+linux/flutter/ephemeral/
+macos/Flutter/ephemeral/
+windows/flutter/ephemeral/
+
+# Editor / VCS noise
+.git
+.idea
+.vscode
+*.iml
+*.swp
+.DS_Store
+
+# Local secrets and runtime data
+.env
+*.db
+*.db-journal
+secretariat_data/
+INITIAL_CREDENTIALS.txt
+
+# Tests + docs that are not needed for runtime image
+docs/
+test/
+goldens/
+
+# Keep server pubspec out of the Flutter-Web image to avoid confusion;
+# it is copied explicitly by Dockerfile.server.
+pubspec_server.yaml.bak
+
+# Production archives left over from packaging scripts
+production_*/
+.production_dir.txt
+
+# Tesseract data (large)
+tools/tessdata*/

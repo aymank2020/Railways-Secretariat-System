@@ -100,6 +100,80 @@ flutter run -d windows --dart-define=API_BASE_URL=http://localhost:8080
 
 ---
 
+## نشر السيرفر للإنتاج (Docker / Ubuntu LAN)
+
+يمكن تشغيل ثلاث خدمات Docker معاً (Dart server + Flutter Web + nginx + Cloudflare Tunnel اختياري) على أي Ubuntu LTS.
+
+### الخيار 1: السكربت الجاهز
+
+على سيرفر Ubuntu نظيف:
+
+```bash
+git clone https://github.com/aymank2020/Railways-Secretariat-System.git /tmp/railways
+cd /tmp/railways
+sudo bash deploy/scripts/bootstrap.sh
+```
+
+السكربت يعمل التالي بالترتيب:
+1. ينصّب Docker Engine + Compose v2 + UFW.
+2. ينشئ مستخدم النظام `railways`.
+3. يستنسخ الريبو إلى `/opt/railways-secretariat-flutter`.
+4. ينشئ `.env` آمن (port 80، CORS مغلق افتراضياً).
+5. يضبط UFW: SSH مفتوح، port 80 مفتوح للـ LAN فقط (`192.168.0.0/16`، `10.0.0.0/8`، `172.16.0.0/12`).
+6. يبني ويشغّل الـ stack.
+7. يتأكد من صحة الخدمات عبر `/healthz` و `/api/health`.
+8. يدوّر كلمة سر admin من `admin123` إلى كلمة عشوائية ويحفظها في `INITIAL_CREDENTIALS.txt` (mode 600).
+
+### الخيار 2: يدوي
+
+```bash
+git clone https://github.com/aymank2020/Railways-Secretariat-System.git
+cd Railways-Secretariat-System
+cp .env.example .env
+# عدّل .env حسب رغبتك (port، CORS، tunnel token...)
+docker compose -f docker-compose.prod.yml build
+docker compose -f docker-compose.prod.yml up -d
+```
+
+### الخدمات
+
+| الخدمة | المنفذ | الوصف |
+|---|---|---|
+| `web` | 80 (host) | nginx يخدّم Flutter Web ويعمل reverse-proxy لـ `/api/*` |
+| `server` | 8080 (داخلي) | Dart server (نفس الـ binary من `dart compile exe`) |
+| `cloudflared` | n/a | اختياري: Cloudflare Tunnel للوصول عن بُعد عبر WARP |
+
+### تفعيل Cloudflare Tunnel (اختياري)
+
+```bash
+# على جهاز الإدارة
+cloudflared tunnel create secretariat
+# انسخ الـ Token من cloudflare dashboard ولصّقه في .env كـ CLOUDFLARE_TUNNEL_TOKEN
+
+# ثم على السيرفر:
+cd /opt/railways-secretariat-flutter
+sudo -u railways docker compose -f docker-compose.prod.yml --profile tunnel up -d cloudflared
+```
+
+### العمليات اليومية
+
+```bash
+# عرض السجلات
+sudo -u railways docker compose -f docker-compose.prod.yml logs -f
+
+# تحديث آخر إصدار من main
+sudo -u railways bash -c "cd /opt/railways-secretariat-flutter && \
+  git pull --ff-only origin main && \
+  docker compose -f docker-compose.prod.yml build && \
+  docker compose -f docker-compose.prod.yml up -d --force-recreate"
+
+# نسخة احتياطية من قاعدة البيانات
+docker run --rm -v railways_secretariat_data:/data -v $PWD:/backup alpine \
+  tar -czf /backup/secretariat-backup-$(date +%Y%m%d).tgz /data
+```
+
+---
+
 ## بناء الإصدار النهائي
 
 ### Windows

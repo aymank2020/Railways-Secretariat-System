@@ -77,3 +77,15 @@ android/build/
 
 # Tesseract OCR data (large binary files)
 tools/tessdata*/
+
+# Production secrets / generated files
+.env
+INITIAL_CREDENTIALS.txt
+secretariat_data/
+
+# Flutter pubspec backup created by build_server.sh
+pubspec.yaml.bak
+
+# Local Dart-only compiled binary
+/server_main
+/build_artifacts/

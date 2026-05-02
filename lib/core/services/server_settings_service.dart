@@ -1,5 +1,6 @@
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:railway_secretariat/core/platform/shared_preferences_shims.dart'
+    if (dart.library.ui) 'package:shared_preferences/shared_preferences.dart';
 
 /// Manages the persisted server URL and provides helpers to test
 /// connectivity against the configured API endpoint.
