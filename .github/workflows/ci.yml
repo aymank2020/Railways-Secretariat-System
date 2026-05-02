@@ -35,7 +35,9 @@ jobs:
         run: dart analyze lib/server_main.dart lib/server
 
       - name: Compile server binary
-        run: dart compile exe lib/server_main.dart -o build_artifacts/server_main
+        run: |
+          mkdir -p build_artifacts
+          dart compile exe lib/server_main.dart -o build_artifacts/server_main
 
       - name: Smoke test the binary
         env:

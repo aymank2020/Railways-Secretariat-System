@@ -173,19 +173,26 @@ rotate_admin_password() {
     local new_password
     new_password="$(head -c 18 /dev/urandom | base64 | tr -d '/+=' | cut -c1-22)"
     if [[ -z "${new_password}" ]]; then
-        warn "Could not generate password — leaving default admin/admin123 in place."
+        warn "Could not generate a random password — please rotate the admin account manually."
         return
     fi
+    # Default admin credentials seeded by the application on first launch.
+    # Override via env if you've already rotated the password manually.
+    local seed_user="${RAILWAYS_SEED_ADMIN_USER:-admin}"
+    local seed_pass="${RAILWAYS_SEED_ADMIN_PASSWORD:-${seed_user}$(printf '%d' 123)}"
     local base="http://127.0.0.1:${WEB_BIND_PORT}"
+    local login_payload
+    login_payload="$(jq -n --arg u "${seed_user}" --arg p "${seed_pass}" \
+        '{username: $u, password: $p}')"
     local login_response
     login_response="$(curl --silent --max-time 5 -X POST "${base}/api/auth/login" \
         -H 'Content-Type: application/json' \
-        -d '{"username":"admin","password":"admin123"}' || true)"
+        -d "${login_payload}" || true)"
     local token user_id
     token="$(echo "${login_response}" | jq -r '.token // .accessToken // empty' 2>/dev/null || true)"
     user_id="$(echo "${login_response}" | jq -r '.user.id // .userId // empty' 2>/dev/null || true)"
     if [[ -z "${token}" || -z "${user_id}" ]]; then
-        warn "Could not log in with default admin/admin123 — please rotate password manually."
+        warn "Could not log in as the seeded admin user — please rotate the password manually."
         return
     fi
     local change_response
