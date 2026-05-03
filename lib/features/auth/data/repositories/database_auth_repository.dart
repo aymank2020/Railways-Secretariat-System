@@ -24,4 +24,10 @@ class DatabaseAuthRepository implements AuthRepository {
   }) async {
     await _databaseService.updateUserPassword(userId, newPassword);
   }
+
+  /// Local-only deployments do not have remote sessions to extend, so
+  /// proactive refresh is a no-op. Returning `false` keeps the periodic
+  /// timer in [AuthProvider] from firing repeatedly.
+  @override
+  Future<bool> refreshSession() async => false;
 }
