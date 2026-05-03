@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math';
 
 /// CORS middleware - sets appropriate headers on every response.
 ///
@@ -28,30 +29,59 @@ void setCorsHeaders(
   );
   response.headers
       .set('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS');
+  // Expose the request-id header so cross-origin JS can read it from
+  // failed responses and surface it in error messages / bug reports.
+  response.headers.set('Access-Control-Expose-Headers', 'X-Request-Id');
+}
+
+/// Per-request opaque identifier surfaced both in the access log and to the
+/// client via the `X-Request-Id` response header. Letting the client see it
+/// makes it trivial for an operator to grep for the matching log line when
+/// a user reports an error.
+///
+/// Format: 12 lowercase alphanumerics, e.g. `req-r3k9pa1tlqxy`. Short
+/// enough to copy/paste, long enough that collisions within a 10-minute
+/// log window are negligible (~62^12 = 3e21 possibilities).
+String generateRequestId() {
+  const alphabet = 'abcdefghijklmnopqrstuvwxyz0123456789';
+  final rng = Random.secure();
+  final buf = StringBuffer('req-');
+  for (var i = 0; i < 12; i++) {
+    buf.write(alphabet[rng.nextInt(alphabet.length)]);
+  }
+  return buf.toString();
 }
 
 /// Simple request logger.
 ///
 /// Call [logRequest] at the start of handling and [logResponse] when done.
+/// Both lines are tagged with the same [requestId], which is also written
+/// to the response's `X-Request-Id` header so an operator can correlate
+/// what the user saw with what hit the server.
 class RequestLogger {
   final bool enabled;
 
   const RequestLogger({this.enabled = true});
 
-  void logRequest(HttpRequest request) {
+  void logRequest(HttpRequest request, String requestId) {
     if (!enabled) return;
     final now = DateTime.now().toIso8601String();
     stdout.writeln(
-      '[$now] ${request.method} ${request.uri.path}'
+      '[$now] [$requestId] ${request.method} ${request.uri.path}'
       '${request.uri.query.isNotEmpty ? "?${request.uri.query}" : ""}',
     );
   }
 
-  void logResponse(HttpRequest request, int statusCode, Stopwatch timer) {
+  void logResponse(
+    HttpRequest request,
+    String requestId,
+    int statusCode,
+    Stopwatch timer,
+  ) {
     if (!enabled) return;
     final ms = timer.elapsedMilliseconds;
     stdout.writeln(
-      '  -> $statusCode (${ms}ms)',
+      '  [$requestId] -> $statusCode (${ms}ms)',
     );
   }
 }

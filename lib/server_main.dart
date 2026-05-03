@@ -214,12 +214,18 @@ Future<void> _handleRequest({
   final timer = Stopwatch()..start();
   setCorsHeaders(response, allowedOrigins: corsOrigins);
 
-  logger.logRequest(request);
+  // Per-request id surfaced to the client (X-Request-Id) and tagged onto
+  // both log lines so operators can grep server logs by the value the user
+  // sees in the failed response.
+  final requestId = generateRequestId();
+  response.headers.set('X-Request-Id', requestId);
+
+  logger.logRequest(request, requestId);
 
   if (request.method == 'OPTIONS') {
     response.statusCode = HttpStatus.noContent;
     await response.close();
-    logger.logResponse(request, HttpStatus.noContent, timer);
+    logger.logResponse(request, requestId, HttpStatus.noContent, timer);
     return;
   }
 
@@ -1003,15 +1009,27 @@ Future<void> _handleRequest({
     response.statusCode = HttpStatus.badRequest;
     writeJson(response, <String, dynamic>{'message': e.toString()});
   } catch (e, st) {
-    stderr.writeln('Server error: $e');
-    stderr.writeln(st);
-    response.statusCode = HttpStatus.internalServerError;
-    writeJson(response, <String, dynamic>{
-      'message': 'Internal server error. Check server logs for details.',
-    });
+    // Translate raw SQLite constraint errors into a clear 4xx response with
+    // an Arabic explanation rather than leaking a 500 + cryptic SQL text to
+    // the operator. Anything we can't translate falls through to the
+    // generic 500 path so it still ends up in the server log.
+    final mapped = mapDatabaseConstraintError(e);
+    if (mapped != null) {
+      response.statusCode = mapped.statusCode;
+      writeJson(response, <String, dynamic>{'message': mapped.message});
+    } else {
+      stderr.writeln('[$requestId] Server error: $e');
+      stderr.writeln('[$requestId] $st');
+      response.statusCode = HttpStatus.internalServerError;
+      writeJson(response, <String, dynamic>{
+        'message':
+            'Internal server error. Reference: $requestId — check server logs.',
+        'requestId': requestId,
+      });
+    }
   } finally {
     timer.stop();
-    logger.logResponse(request, response.statusCode, timer);
+    logger.logResponse(request, requestId, response.statusCode, timer);
     await response.close();
   }
 }
