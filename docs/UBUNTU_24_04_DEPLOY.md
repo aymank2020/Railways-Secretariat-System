@@ -244,7 +244,128 @@ the old database file.
 
 ---
 
-## 7. Troubleshooting
+## 7. (Optional) Storing data on a separate disk
+
+By default Docker writes the named volumes (`railways_secretariat_data`,
+`railways_secretariat_logs`) under `/var/lib/docker/volumes/` on the root
+filesystem. On servers with a dedicated data disk you usually want the SQLite
+database and uploaded attachments to live there instead, so the OS disk stays
+small and the data disk can be sized independently.
+
+The pattern below uses Docker's `local` volume driver with a `bind` option,
+which keeps the volume *names* identical (so backup scripts and previous
+documentation keep working) but stores the bytes on the disk you choose.
+
+### 7.1 Prepare the disk
+
+Identify the new device and check whether it already has data on it:
+
+```bash
+sudo lsblk -f
+sudo fdisk -l
+```
+
+If the disk is brand-new (or you are happy to wipe it):
+
+```bash
+DEV=/dev/sdb                                # change to match `lsblk`
+sudo wipefs -a "${DEV}" "${DEV}1" 2>/dev/null || true
+sudo sgdisk --zap-all "${DEV}"
+sudo parted -s "${DEV}" mklabel gpt
+sudo parted -s -a optimal "${DEV}" mkpart primary ext4 0% 100%
+sudo mkfs.ext4 -F "${DEV}1"
+```
+
+Mount it at a stable path and persist the mount across reboots:
+
+```bash
+sudo mkdir -p /mnt/storage
+UUID=$(sudo blkid -s UUID -o value /dev/sdb1)
+echo "UUID=${UUID} /mnt/storage ext4 defaults,noatime,nofail 0 2" \
+    | sudo tee -a /etc/fstab
+sudo mount -a
+df -h /mnt/storage
+```
+
+Create the per-volume directories and give them to the `railways` user:
+
+```bash
+sudo install -d -o railways -g railways -m 0750 \
+    /mnt/storage/secretariat \
+    /mnt/storage/secretariat/data \
+    /mnt/storage/secretariat/logs
+```
+
+### 7.2 Point the compose volumes at the disk
+
+Edit `/opt/railways-secretariat-flutter/docker-compose.prod.yml` and extend
+the `volumes:` block so each volume uses the `local` driver with a bind
+mount onto `/mnt/storage`:
+
+```yaml
+volumes:
+  secretariat_data:
+    name: railways_secretariat_data
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/storage/secretariat/data
+  secretariat_logs:
+    name: railways_secretariat_logs
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/storage/secretariat/logs
+```
+
+### 7.3 Cut over
+
+If this is the first deployment, just bring the stack up:
+
+```bash
+sudo -u railways docker compose \
+    -f /opt/railways-secretariat-flutter/docker-compose.prod.yml up -d
+```
+
+If the stack is already running with the default named volumes, take a
+snapshot first, then move the data:
+
+```bash
+# 1) Snapshot the existing volumes (safety net).
+sudo /opt/railways-secretariat-flutter/deploy/scripts/backup.sh
+
+# 2) Stop the stack so SQLite is quiescent.
+sudo -u railways docker compose \
+    -f /opt/railways-secretariat-flutter/docker-compose.prod.yml down
+
+# 3) Copy the bytes from the old volume location onto the new disk.
+sudo cp -aT /var/lib/docker/volumes/railways_secretariat_data/_data \
+            /mnt/storage/secretariat/data
+sudo cp -aT /var/lib/docker/volumes/railways_secretariat_logs/_data \
+            /mnt/storage/secretariat/logs
+
+# 4) Drop the old named volumes so Docker re-creates them with the new
+#    bind options on the next `up`.
+sudo docker volume rm railways_secretariat_data railways_secretariat_logs
+
+# 5) Bring the stack back up; verify storage is on the new disk.
+sudo -u railways docker compose \
+    -f /opt/railways-secretariat-flutter/docker-compose.prod.yml up -d
+
+findmnt /var/lib/docker/volumes/railways_secretariat_data/_data
+# SOURCE should be the new disk's partition, e.g. /dev/sdb1[/secretariat/data]
+```
+
+`docker volume inspect railways_secretariat_data` will still report a
+mountpoint under `/var/lib/docker/volumes/...`; that is just the symlink the
+local driver maintains. The actual bytes live on `/mnt/storage` (verify with
+`stat -c '%i'` on both paths — same inode means same file).
+
+---
+
+## 8. Troubleshooting
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
@@ -257,7 +378,7 @@ the old database file.
 
 ---
 
-## 8. Removing the deployment
+## 9. Removing the deployment
 
 ```bash
 sudo -u railways docker compose \
