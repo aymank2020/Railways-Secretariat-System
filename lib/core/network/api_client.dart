@@ -125,7 +125,17 @@ class ApiClient {
         final response = await action().timeout(requestTimeout);
 
         // Handle 401 Unauthorized — attempt re-authentication once.
-        if (response.statusCode == 401 && attempt == 0) {
+        // Skip the re-auth callback when the failing request is itself the
+        // login endpoint, otherwise a stale saved password (e.g. after the
+        // user changes it on another device) keeps re-running login through
+        // `onUnauthorized`, which in turn re-issues the same login call,
+        // burning through the server's rate-limiter and bubbling up
+        // confusing minified exceptions instead of "invalid credentials".
+        final isLoginCall =
+            response.request?.url.path.endsWith('/api/auth/login') ?? false;
+        if (response.statusCode == 401 &&
+            attempt == 0 &&
+            !isLoginCall) {
           final reAuth = onUnauthorized;
           if (reAuth != null) {
             final success = await reAuth();

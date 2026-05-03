@@ -1,3 +1,4 @@
+import 'package:railway_secretariat/core/network/api_client.dart';
 import 'package:railway_secretariat/features/users/data/models/user_model.dart';
 import '../repositories/auth_repository.dart';
 import '../repositories/credentials_repository.dart';
@@ -18,10 +19,24 @@ class AuthUseCases {
       return null;
     }
 
-    final user = await _authRepository.authenticate(
-      username: saved.username,
-      password: saved.password,
-    );
+    final UserModel? user;
+    try {
+      user = await _authRepository.authenticate(
+        username: saved.username,
+        password: saved.password,
+      );
+    } on ApiRequestException catch (e) {
+      // Saved credentials no longer match what's on the server (e.g. the
+      // password was rotated from another device). Drop them so the next
+      // app start doesn't keep re-attempting a login that's guaranteed to
+      // fail. Network/timeouts are intentionally re-thrown so that a flaky
+      // connection doesn't wipe a still-valid stored password.
+      if (e.statusCode == 401 || e.statusCode == 403) {
+        await _credentialsRepository.clearCredentials();
+        return null;
+      }
+      rethrow;
+    }
 
     if (user == null) {
       await _credentialsRepository.clearCredentials();
