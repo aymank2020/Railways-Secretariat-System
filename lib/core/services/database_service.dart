@@ -35,7 +35,17 @@ class DatabaseService {
   static final DatabaseService _instance = DatabaseService._internal();
   static Database? _database;
   static bool _webRecoveryAttempted = false;
+  static bool _serverMode = false;
   static const int _dbVersion = 9;
+
+  /// Marks this process as the embedded Dart API server. Must be called
+  /// before any access to [DatabaseService.database] so that [_onConfigure]
+  /// can pick the right journal mode (WAL for the server vs. DELETE for
+  /// the desktop / mobile Flutter app).
+  static void enableServerMode() {
+    _serverMode = true;
+  }
+
   static const Duration _webDbQueryTimeout = Duration(seconds: 15);
   static const String _envDatabasePathKey = 'SECRETARIAT_DB_PATH';
   static const int _busyRetryAttempts = 7;
@@ -228,10 +238,24 @@ class DatabaseService {
   Future<void> _onConfigure(Database db) async {
     await db.execute('PRAGMA foreign_keys = ON');
 
-    if (!kIsWeb) {
+    if (kIsWeb) {
+      return;
+    }
+
+    await db.execute('PRAGMA synchronous = NORMAL');
+
+    if (_serverMode) {
+      // The embedded Dart server may serve concurrent reads/writes from many
+      // browser sessions, so WAL is the right tradeoff (writers do not block
+      // readers). A 10s busy-timeout keeps the API responsive under load.
+      await db.execute('PRAGMA busy_timeout = 10000');
+      await db.execute('PRAGMA journal_mode = WAL');
+    } else {
+      // Single-writer desktop / mobile / unit-test scenarios: rollback
+      // journal is simpler, plays nicer with backups (no -wal/-shm files
+      // to forget) and avoids surprising behaviour after force-quit.
       await db.execute('PRAGMA busy_timeout = 5000');
       await db.execute('PRAGMA journal_mode = DELETE');
-      await db.execute('PRAGMA synchronous = NORMAL');
     }
   }
 

@@ -10,4 +10,11 @@ abstract class AuthRepository {
     required int userId,
     required String newPassword,
   });
+
+  /// Refreshes the current authenticated session, extending its TTL.
+  ///
+  /// Returns `true` if the refresh succeeded, `false` if there is no live
+  /// session (e.g. local-only mode, or the saved token is already expired).
+  /// Network errors propagate so the caller can decide whether to retry.
+  Future<bool> refreshSession() async => false;
 }
