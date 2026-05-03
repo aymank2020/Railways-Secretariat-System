@@ -13,8 +13,15 @@ class ApiException implements Exception {
   const ApiException(this.statusCode, this.message);
 }
 
-/// Maximum allowed request body size (50 MB).
-const int maxRequestBodyBytes = 50 * 1024 * 1024;
+/// Maximum allowed request body size (25 MB).
+///
+/// Attachments are uploaded as base64-encoded JSON strings, which inflate the
+/// raw bytes by ~33%. A 25 MB body therefore fits an ~18 MB binary payload —
+/// large enough for the project's use cases (PDFs, scanned images, Excel
+/// imports) but small enough that a few concurrent uploads cannot exhaust
+/// the container's 1 GB memory cap (see docker-compose.prod.yml). nginx in
+/// front of the API enforces a parallel `client_max_body_size 30m` limit.
+const int maxRequestBodyBytes = 25 * 1024 * 1024;
 
 /// Read and parse the JSON body of an HTTP request.
 ///
@@ -187,8 +194,7 @@ void requireDocumentAccessPermission(ServerSession session) {
   );
 }
 
-void requireDocumentTypePermission(
-    ServerSession session, String documentType) {
+void requireDocumentTypePermission(ServerSession session, String documentType) {
   final normalized = documentType.trim().toLowerCase();
   if (normalized.isEmpty) {
     throw const ApiException(

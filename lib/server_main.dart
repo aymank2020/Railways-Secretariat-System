@@ -40,8 +40,8 @@ Future<void> main() async {
       }
     });
   } else if (Platform.isMacOS) {
-    open.overrideFor(OperatingSystem.macOS,
-        () => DynamicLibrary.open('libsqlite3.dylib'));
+    open.overrideFor(
+        OperatingSystem.macOS, () => DynamicLibrary.open('libsqlite3.dylib'));
   }
 
   final host = Platform.environment['SECRETARIAT_SERVER_HOST'] ?? '0.0.0.0';
@@ -71,16 +71,21 @@ Future<void> main() async {
     window: const Duration(minutes: 5),
   );
 
+  // The PRAGMA journal_mode/busy_timeout setup lives in
+  // [DatabaseService._onConfigure] under the `_serverMode` branch — calling
+  // [enableServerMode] before [database] ensures WAL is applied on the very
+  // first open instead of being toggled afterwards.
+  DatabaseService.enableServerMode();
   final databaseService = DatabaseService();
-
-  // Enable WAL mode for better concurrent read/write performance.
   final db = await databaseService.database;
   try {
-    await db.execute('PRAGMA journal_mode = WAL');
-    await db.execute('PRAGMA busy_timeout = 10000');
-    stdout.writeln('SQLite journal mode set to WAL.');
+    final journalRow = await db.rawQuery('PRAGMA journal_mode');
+    final mode = journalRow.isNotEmpty
+        ? (journalRow.first.values.first ?? '').toString()
+        : '';
+    stdout.writeln('SQLite journal mode: $mode');
   } catch (e) {
-    stderr.writeln('Warning: Could not set WAL mode: $e');
+    stderr.writeln('Warning: Could not query journal_mode: $e');
   }
 
   final authRepository =
@@ -131,6 +136,26 @@ Future<void> main() async {
       ),
     );
   }
+}
+
+/// Returns `true` iff [filePath], once normalised, lives inside [rootPath].
+///
+/// Used by the `/api/attachments/download` endpoint to reject path
+/// traversal payloads such as `/etc/passwd` or
+/// `managed://../../secretariat.db` that would otherwise let an
+/// authenticated client read files outside the attachments directory.
+bool _isPathInsideRoot(String filePath, String rootPath) {
+  final normalizedRoot = p.normalize(p.absolute(rootPath));
+  final normalizedFile = p.normalize(p.absolute(filePath));
+
+  // Equal paths (root itself) count as inside.
+  if (normalizedFile == normalizedRoot) return true;
+
+  final separator = Platform.pathSeparator;
+  final rootWithSeparator = normalizedRoot.endsWith(separator)
+      ? normalizedRoot
+      : '$normalizedRoot$separator';
+  return normalizedFile.startsWith(rootWithSeparator);
 }
 
 void _setupGracefulShutdown(HttpServer server, dynamic db) {
@@ -361,6 +386,20 @@ Future<void> _handleRequest({
         throw const ApiException(HttpStatus.notFound, 'Attachment not found.');
       }
 
+      // Defense-in-depth: refuse any resolved path that escapes the
+      // attachments directory. Without this, an authenticated client
+      // could send `{"filePath": "/etc/passwd"}` or
+      // `{"filePath": "managed://../../secretariat.db"}` and read
+      // arbitrary files inside the container.
+      final attachmentsRoot =
+          await attachmentStorageService.getAttachmentsRootForServer();
+      if (!_isPathInsideRoot(resolvedPath, attachmentsRoot)) {
+        throw const ApiException(
+          HttpStatus.forbidden,
+          'Refused: filePath is outside the attachments directory.',
+        );
+      }
+
       final file = File(resolvedPath);
       if (!await file.exists()) {
         throw const ApiException(
@@ -495,7 +534,8 @@ Future<void> _handleRequest({
       }
       final item = await databaseService.getWaridById(id);
       if (item == null) {
-        throw const ApiException(HttpStatus.notFound, 'Warid record not found.');
+        throw const ApiException(
+            HttpStatus.notFound, 'Warid record not found.');
       }
       writeJson(response, item.toMap());
       return;
@@ -550,7 +590,8 @@ Future<void> _handleRequest({
     // -----------------------------------------------------------------------
     // Warid batch delete
     // -----------------------------------------------------------------------
-    if (request.method == 'POST' && path == '/api/documents/warid/batch-delete') {
+    if (request.method == 'POST' &&
+        path == '/api/documents/warid/batch-delete') {
       requireWaridPermission(session);
       final body = await readJsonBody(request);
       final rawIds = body['ids'];
@@ -618,7 +659,8 @@ Future<void> _handleRequest({
       }
       final item = await databaseService.getSadirById(id);
       if (item == null) {
-        throw const ApiException(HttpStatus.notFound, 'Sadir record not found.');
+        throw const ApiException(
+            HttpStatus.notFound, 'Sadir record not found.');
       }
       writeJson(response, item.toMap());
       return;
@@ -673,7 +715,8 @@ Future<void> _handleRequest({
     // -----------------------------------------------------------------------
     // Sadir batch delete
     // -----------------------------------------------------------------------
-    if (request.method == 'POST' && path == '/api/documents/sadir/batch-delete') {
+    if (request.method == 'POST' &&
+        path == '/api/documents/sadir/batch-delete') {
       requireSadirPermission(session);
       final body = await readJsonBody(request);
       final rawIds = body['ids'];
@@ -908,8 +951,7 @@ Future<void> _handleRequest({
       requireImportPermission(session);
       final id = int.tryParse(path.substring('/api/ocr/templates/'.length));
       if (id == null) {
-        throw const ApiException(
-            HttpStatus.badRequest, 'Invalid template id.');
+        throw const ApiException(HttpStatus.badRequest, 'Invalid template id.');
       }
       await ocrRepository.deleteTemplate(id);
       writeJson(response, <String, dynamic>{'ok': true});

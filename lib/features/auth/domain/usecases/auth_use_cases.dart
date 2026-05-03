@@ -76,6 +76,12 @@ class AuthUseCases {
     return _credentialsRepository.clearCredentials();
   }
 
+  /// Proactively extends the current session before it expires (server-side
+  /// TTL is 8 hours; the UI calls this every 30 minutes via [AuthProvider]).
+  Future<bool> refreshSession() {
+    return _authRepository.refreshSession();
+  }
+
   Future<bool> changePassword({
     required UserModel currentUser,
     required String oldPassword,

@@ -2,15 +2,26 @@ import 'dart:io';
 
 /// CORS middleware - sets appropriate headers on every response.
 ///
-/// When [allowedOrigins] is null or empty, defaults to `*`.
+/// When [allowedOrigins] is null or empty, no `Access-Control-Allow-Origin`
+/// header is emitted, which means browsers will block cross-origin requests.
+/// This is the secure default; the production deployment serves both the
+/// Flutter Web bundle and the API from the same origin (via nginx) so CORS
+/// headers are not needed there.
+///
+/// To explicitly allow `*`, set the env var `SECRETARIAT_CORS_ORIGINS=*`.
 void setCorsHeaders(
   HttpResponse response, {
   List<String>? allowedOrigins,
 }) {
-  final origin = (allowedOrigins != null && allowedOrigins.isNotEmpty)
-      ? allowedOrigins.join(', ')
-      : '*';
-  response.headers.set('Access-Control-Allow-Origin', origin);
+  if (allowedOrigins != null && allowedOrigins.isNotEmpty) {
+    final origin = allowedOrigins.length == 1
+        ? allowedOrigins.single
+        : allowedOrigins.join(', ');
+    response.headers.set('Access-Control-Allow-Origin', origin);
+    response.headers.set('Vary', 'Origin');
+  }
+  // Always advertise the request-method/header allow-list — these are
+  // ignored by browsers when no Allow-Origin header is set.
   response.headers.set(
     'Access-Control-Allow-Headers',
     'Origin, X-Requested-With, Content-Type, Accept, Authorization',

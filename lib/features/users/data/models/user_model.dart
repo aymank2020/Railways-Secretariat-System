@@ -1,4 +1,4 @@
-﻿class UserModel {
+class UserModel {
   final int? id;
   final String username;
   final String password;
@@ -130,6 +130,16 @@
   static bool _defaultCanManageSadir(String role) => role != 'viewer';
   static bool _defaultCanImportExcel(String role) => role == 'admin';
 
+  /// Returns the bootstrap users that the app seeds on a fresh database.
+  ///
+  /// SECURITY NOTE: The passwords here are placeholders for first-run only.
+  /// Production deployments MUST rotate them before exposing the system —
+  /// `deploy/scripts/bootstrap.sh` does this automatically for both `admin`
+  /// and `user`, and stores the new credentials in `INITIAL_CREDENTIALS.txt`.
+  ///
+  /// Do NOT add personal accounts (e.g. real names with hardcoded passwords)
+  /// to this list. Personal accounts must be created at runtime via the
+  /// admin UI or the `/api/users` endpoint.
   static List<UserModel> getDefaultUsers() {
     final now = DateTime.now();
     return [
@@ -161,21 +171,6 @@
         canManageSadir: true,
         canImportExcel: false,
       ),
-      UserModel(
-        id: 3,
-        username: 'aymankamel24',
-        password: 'Ak@123456*',
-        fullName: 'Ayman Kamel',
-        email: 'aymankamel24@railway.gov',
-        phone: '01000000000',
-        role: 'admin',
-        createdAt: now,
-        canManageUsers: true,
-        canManageWarid: true,
-        canManageSadir: true,
-        canImportExcel: true,
-      ),
     ];
   }
 }
-

@@ -53,4 +53,27 @@ class HttpAuthRepository implements AuthRepository {
       },
     );
   }
+
+  @override
+  Future<bool> refreshSession() async {
+    if (!ApiSession.hasToken) {
+      return false;
+    }
+    try {
+      final response = await _apiClient.postMap('/api/auth/refresh');
+      final newToken = response['token']?.toString();
+      if (newToken == null || newToken.trim().isEmpty) {
+        return false;
+      }
+      ApiSession.setToken(newToken);
+      return true;
+    } on ApiRequestException catch (e) {
+      // 401 / 403 means the token already expired or was revoked. Tell the
+      // caller so it can fall back to re-authentication, but do not throw.
+      if (e.statusCode == 401 || e.statusCode == 403) {
+        return false;
+      }
+      rethrow;
+    }
+  }
 }

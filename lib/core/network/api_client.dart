@@ -30,7 +30,7 @@ class ApiClient {
   ApiClient({
     required String baseUrl,
     http.Client? httpClient,
-    this.requestTimeout = const Duration(seconds: 30),
+    this.requestTimeout = const Duration(seconds: 15),
     this.maxRetries = 3,
     this.onUnauthorized,
   })  : baseUrl = _normalizeBaseUrl(baseUrl),
@@ -133,9 +133,7 @@ class ApiClient {
         // confusing minified exceptions instead of "invalid credentials".
         final isLoginCall =
             response.request?.url.path.endsWith('/api/auth/login') ?? false;
-        if (response.statusCode == 401 &&
-            attempt == 0 &&
-            !isLoginCall) {
+        if (response.statusCode == 401 && attempt == 0 && !isLoginCall) {
           final reAuth = onUnauthorized;
           if (reAuth != null) {
             final success = await reAuth();

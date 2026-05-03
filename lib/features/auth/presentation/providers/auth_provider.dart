@@ -15,6 +15,15 @@ class AuthProvider extends ChangeNotifier {
   String? _error;
   Timer? _errorTimer;
 
+  /// Periodic timer that proactively refreshes the auth token long before
+  /// the server-side TTL (8h) expires. Active only while a user is signed in.
+  Timer? _refreshTimer;
+
+  /// Interval between proactive refreshes. With an 8h server TTL this gives
+  /// us ~16 chances per session, so a single transient network blip never
+  /// pushes the user back to the login screen.
+  static const Duration _refreshInterval = Duration(minutes: 30);
+
   UserModel? get currentUser => _currentUser;
   bool get isLoading => _isLoading;
   String? get error => _error;
@@ -29,6 +38,38 @@ class AuthProvider extends ChangeNotifier {
   AuthProvider({required AuthUseCases authUseCases})
       : _authUseCases = authUseCases {
     _checkSavedLogin();
+  }
+
+  void _startRefreshTimer() {
+    _refreshTimer?.cancel();
+    _refreshTimer = Timer.periodic(_refreshInterval, (_) {
+      _refreshSessionSilently();
+    });
+  }
+
+  void _stopRefreshTimer() {
+    _refreshTimer?.cancel();
+    _refreshTimer = null;
+  }
+
+  Future<void> _refreshSessionSilently() async {
+    if (_currentUser == null) {
+      _stopRefreshTimer();
+      return;
+    }
+    try {
+      final ok = await _authUseCases.refreshSession();
+      if (!ok) {
+        // Token is no longer valid (expired or revoked). Stop the timer; the
+        // ApiClient's `onUnauthorized` hook handles re-login transparently
+        // when the user issues their next request.
+        _stopRefreshTimer();
+      }
+    } catch (_) {
+      // Network error: keep the timer alive so the next tick can retry. We
+      // intentionally swallow the exception so it does not surface a UI
+      // error banner (the user has not initiated any visible action).
+    }
   }
 
   void _setError(String? message, {Duration? autoClear}) {
@@ -50,6 +91,7 @@ class AuthProvider extends ChangeNotifier {
       final user = await _authUseCases.tryAutoLogin();
       if (user != null) {
         _currentUser = user;
+        _startRefreshTimer();
         notifyListeners();
       }
     } catch (_) {
@@ -83,6 +125,7 @@ class AuthProvider extends ChangeNotifier {
         _currentUser = user;
         _isLoading = false;
         _setError(null);
+        _startRefreshTimer();
         notifyListeners();
         return true;
       }
@@ -132,6 +175,7 @@ class AuthProvider extends ChangeNotifier {
   Future<void> logout() async {
     _currentUser = null;
     _setError(null);
+    _stopRefreshTimer();
     ApiSession.clear();
     await _authUseCases.logout();
     notifyListeners();
@@ -187,6 +231,7 @@ class AuthProvider extends ChangeNotifier {
   @override
   void dispose() {
     _errorTimer?.cancel();
+    _refreshTimer?.cancel();
     super.dispose();
   }
 }

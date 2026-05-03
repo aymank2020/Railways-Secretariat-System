@@ -4,8 +4,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:railway_secretariat/core/platform/foundation_shims.dart'
-    if (dart.library.ui) 'package:flutter/foundation.dart'
-    show kIsWeb;
+    if (dart.library.ui) 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:path/path.dart' as p;
 
 import 'package:railway_secretariat/core/network/api_client.dart';
@@ -224,6 +223,17 @@ class AttachmentStorageService {
     } catch (_) {
       return null;
     }
+  }
+
+  /// Public accessor used by the Dart server to enforce path-traversal
+  /// boundaries on `/api/attachments/download`. Throws if the
+  /// attachments root cannot be created or resolved.
+  Future<String> getAttachmentsRootForServer() async {
+    final root = await _resolveAttachmentsRoot();
+    if (root == null || root.isEmpty) {
+      throw StateError('Attachments root could not be resolved.');
+    }
+    return root;
   }
 
   Future<ApiClient?> _resolveRemoteApiClientAsync() async {
