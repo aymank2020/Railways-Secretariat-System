@@ -4,7 +4,6 @@ import 'package:data_table_2/data_table_2.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:open_filex/open_filex.dart';
 import 'package:provider/provider.dart';
 import 'package:speech_to_text/speech_to_text.dart'
     if (dart.library.js_interop) 'package:speech_to_text/speech_to_text.dart';
@@ -13,6 +12,7 @@ import 'package:railway_secretariat/features/documents/data/models/warid_model.d
 import 'package:railway_secretariat/features/auth/presentation/providers/auth_provider.dart';
 import 'package:railway_secretariat/features/documents/presentation/providers/document_provider.dart';
 import 'package:railway_secretariat/features/documents/data/datasources/a3_print_service.dart';
+import 'package:railway_secretariat/core/services/attachment_opener_service.dart';
 import 'package:railway_secretariat/features/documents/data/datasources/attachment_storage_service.dart';
 import 'package:railway_secretariat/features/documents/data/datasources/documents_export_service.dart';
 import 'package:railway_secretariat/utils/helpers.dart';
@@ -51,6 +51,8 @@ class _WaridListScreenState extends State<WaridListScreen> {
   final _verticalScrollController = ScrollController();
   final AttachmentStorageService _attachmentStorage =
       AttachmentStorageService();
+  final AttachmentOpenerService _attachmentOpener =
+      AttachmentOpenerService();
   final _documentsExportService = DocumentsExportService();
   final _a3PrintService = A3PrintService();
   final Set<int> _selectedWaridIds = <int>{};
@@ -73,33 +75,17 @@ class _WaridListScreenState extends State<WaridListScreen> {
   }
 
   Future<void> _openAttachment(WaridModel warid) async {
-    final path = await _attachmentStorage.resolveAttachmentPath(warid.filePath);
+    final result = await _attachmentOpener.open(
+      storedPath: warid.filePath,
+      originalFileName: warid.fileName,
+    );
     if (!mounted) {
       return;
     }
-    if (path == null || path.trim().isEmpty) {
-      Helpers.showSnackBar(context, 'لا يوجد ملف مرفق لهذا السجل',
-          isError: true);
-      return;
-    }
-
-    if (kIsWeb) {
+    if (!result.ok) {
       Helpers.showSnackBar(
         context,
-        'فتح الملفات المحلية غير مدعوم من نسخة الويب. استخدم نسخة Windows أو Android.',
-        isError: true,
-      );
-      return;
-    }
-
-    final result = await OpenFilex.open(path);
-    if (!mounted) {
-      return;
-    }
-    if (result.type != ResultType.done) {
-      Helpers.showSnackBar(
-        context,
-        'تعذر فتح الملف: ${result.message}',
+        result.errorMessage ?? 'تعذر فتح الملف',
         isError: true,
       );
     }
@@ -243,36 +229,17 @@ class _WaridListScreenState extends State<WaridListScreen> {
   }
 
   Future<void> _openFollowupAttachment(WaridModel warid) async {
-    final path =
-        await _attachmentStorage.resolveAttachmentPath(warid.followupFilePath);
+    final result = await _attachmentOpener.open(
+      storedPath: warid.followupFilePath,
+      originalFileName: warid.followupFileName,
+    );
     if (!mounted) {
       return;
     }
-    if (path == null || path.trim().isEmpty) {
-      Helpers.showSnackBar(context,
-          '\u0644\u0627 \u064a\u0648\u062c\u062f \u0645\u0644\u0641 \u0645\u062a\u0627\u0628\u0639\u0629 \u0645\u0631\u0641\u0642 \u0644\u0647\u0630\u0627 \u0627\u0644\u0633\u062c\u0644',
-          isError: true);
-      return;
-    }
-
-    if (kIsWeb) {
+    if (!result.ok) {
       Helpers.showSnackBar(
         context,
-        '\u0641\u062a\u062d \u0627\u0644\u0645\u0644\u0641\u0627\u062a \u0627\u0644\u0645\u062d\u0644\u064a\u0629 \u063a\u064a\u0631 \u0645\u062f\u0639\u0648\u0645 \u0645\u0646 \u0646\u0633\u062e\u0629 \u0627\u0644\u0648\u064a\u0628. \u0627\u0633\u062a\u062e\u062f\u0645 \u0646\u0633\u062e\u0629 Windows \u0623\u0648 Android.',
-        isError: true,
-      );
-      return;
-    }
-
-    final result = await OpenFilex.open(path);
-    if (!mounted) {
-      return;
-    }
-
-    if (result.type != ResultType.done) {
-      Helpers.showSnackBar(
-        context,
-        '\u062a\u0639\u0630\u0631 \u0641\u062a\u062d \u0645\u0644\u0641 \u0627\u0644\u0645\u062a\u0627\u0628\u0639\u0629: ${result.message}',
+        result.errorMessage ?? '\u062a\u0639\u0630\u0631 \u0641\u062a\u062d \u0645\u0644\u0641 \u0627\u0644\u0645\u062a\u0627\u0628\u0639\u0629',
         isError: true,
       );
     }

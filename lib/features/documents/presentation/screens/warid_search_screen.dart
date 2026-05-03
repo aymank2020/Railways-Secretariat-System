@@ -1,12 +1,11 @@
 import 'package:data_table_2/data_table_2.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:open_filex/open_filex.dart';
 import 'package:provider/provider.dart';
+
+import 'package:railway_secretariat/core/services/attachment_opener_service.dart';
 
 import 'package:railway_secretariat/features/documents/data/models/warid_model.dart';
 import 'package:railway_secretariat/features/documents/presentation/providers/document_provider.dart';
-import 'package:railway_secretariat/features/documents/data/datasources/attachment_storage_service.dart';
 import 'package:railway_secretariat/features/documents/data/datasources/documents_export_service.dart';
 import 'package:railway_secretariat/utils/helpers.dart';
 import 'package:railway_secretariat/features/documents/presentation/screens/warid_form_screen.dart';
@@ -24,7 +23,7 @@ class _WaridSearchScreenState extends State<WaridSearchScreen> {
   final _chairmanIncomingNumberController = TextEditingController();
   final _chairmanReturnNumberController = TextEditingController();
   final _documentsExportService = DocumentsExportService();
-  final AttachmentStorageService _attachmentStorage = AttachmentStorageService();
+  final AttachmentOpenerService _attachmentOpener = AttachmentOpenerService();
   final Set<int> _selectedWaridIds = <int>{};
   DateTime? _fromDate;
   DateTime? _toDate;
@@ -48,34 +47,18 @@ class _WaridSearchScreenState extends State<WaridSearchScreen> {
   }
 
   Future<void> _openAttachment(WaridModel warid) async {
-    final path = await _attachmentStorage.resolveAttachmentPath(warid.filePath);
-    if (!mounted) {
-      return;
-    }
-    if (path == null || path.trim().isEmpty) {
-      Helpers.showSnackBar(context, 'لا يوجد ملف مرفق لهذا السجل',
-          isError: true);
-      return;
-    }
-
-    if (kIsWeb) {
-      Helpers.showSnackBar(
-        context,
-        'فتح الملفات المحلية غير مدعوم من نسخة الويب. استخدم نسخة Windows أو Android.',
-        isError: true,
-      );
-      return;
-    }
-
-    final result = await OpenFilex.open(path);
+    final result = await _attachmentOpener.open(
+      storedPath: warid.filePath,
+      originalFileName: warid.fileName,
+    );
     if (!mounted) {
       return;
     }
 
-    if (result.type != ResultType.done) {
+    if (!result.ok) {
       Helpers.showSnackBar(
         context,
-        'تعذر فتح الملف: ${result.message}',
+        result.errorMessage ?? 'تعذر فتح الملف',
         isError: true,
       );
     }

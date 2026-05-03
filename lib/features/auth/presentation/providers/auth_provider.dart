@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'package:railway_secretariat/core/network/api_client.dart';
 import 'package:railway_secretariat/core/network/api_session.dart';
 import 'package:railway_secretariat/features/auth/domain/usecases/auth_use_cases.dart';
 import 'package:railway_secretariat/features/users/data/models/user_model.dart';
@@ -98,6 +99,22 @@ class AuthProvider extends ChangeNotifier {
         'انتهت مهلة تسجيل الدخول. أعد المحاولة مرة أخرى.',
         autoClear: const Duration(seconds: 8),
       );
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    } on ApiRequestException catch (e) {
+      // Map the most common login failures to user-readable Arabic strings
+      // instead of leaking minified runtime type names from the release
+      // build (e.g. "minified:HJ").
+      final String message;
+      if (e.statusCode == 401 || e.statusCode == 403) {
+        message = 'اسم المستخدم أو كلمة المرور غير صحيحة';
+      } else if (e.statusCode == 429) {
+        message = 'تم تجاوز عدد محاولات تسجيل الدخول. أعد المحاولة بعد دقيقة.';
+      } else {
+        message = 'حدث خطأ أثناء الاتصال بالسيرفر (${e.statusCode}).';
+      }
+      _setError(message, autoClear: const Duration(seconds: 8));
       _isLoading = false;
       notifyListeners();
       return false;

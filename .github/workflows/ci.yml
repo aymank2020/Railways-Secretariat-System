@@ -83,6 +83,99 @@ jobs:
           path: build/web
           retention-days: 7
 
+  flutter-android:
+    name: Flutter Android APK
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.41.9
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Build APK (release)
+        # Single fat APK so end-users only need to download one file. The
+        # default API base URL is left empty so the app falls back to the
+        # SECRETARIAT_API_BASE_URL env / Settings screen at first launch.
+        run: flutter build apk --release --dart-define=API_BASE_URL=
+
+      - name: Rename APK with version + sha
+        id: rename_apk
+        run: |
+          set -euo pipefail
+          version=$(grep '^version:' pubspec.yaml | awk '{print $2}' | head -1)
+          short_sha=${GITHUB_SHA::7}
+          src="build/app/outputs/flutter-apk/app-release.apk"
+          dst="build/app/outputs/flutter-apk/Railways-Secretariat-${version}-${short_sha}.apk"
+          mv "$src" "$dst"
+          echo "apk_path=$dst" >> "$GITHUB_OUTPUT"
+          echo "apk_name=$(basename "$dst")" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk-${{ github.sha }}
+          path: ${{ steps.rename_apk.outputs.apk_path }}
+          retention-days: 30
+
+  flutter-windows:
+    name: Flutter Windows desktop
+    runs-on: windows-2022
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.41.9
+          channel: stable
+          cache: true
+
+      - name: Enable Windows desktop
+        run: flutter config --enable-windows-desktop
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Build Windows (release)
+        run: flutter build windows --release --dart-define=API_BASE_URL=
+
+      - name: Package Windows build
+        id: package_windows
+        shell: pwsh
+        run: |
+          $version = (Select-String -Path pubspec.yaml -Pattern '^version:' | ForEach-Object { $_.Line.Split()[1] })[0]
+          $shortSha = $env:GITHUB_SHA.Substring(0,7)
+          $zipName = "Railways-Secretariat-$version-$shortSha-windows-x64.zip"
+          $src = "build/windows/x64/runner/Release"
+          if (-not (Test-Path $src)) {
+            $src = "build/windows/runner/Release"
+          }
+          Compress-Archive -Path "$src/*" -DestinationPath $zipName -CompressionLevel Optimal
+          Write-Output "zip_path=$zipName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Output "zip_name=$zipName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64-${{ github.sha }}
+          path: ${{ steps.package_windows.outputs.zip_path }}
+          retention-days: 30
+
   docker-images:
     name: Docker images build
     runs-on: ubuntu-24.04

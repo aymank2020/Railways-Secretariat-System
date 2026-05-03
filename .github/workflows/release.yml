@@ -1,0 +1,136 @@
+name: Release
+
+# Publishes the Flutter Android APK and Windows desktop bundle as a GitHub
+# Release whenever a `v*` tag is pushed (e.g. `v1.0.6`). End-users can then
+# download the installers from the repository's Releases tab.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build-android:
+    name: Build Android APK
+    runs-on: ubuntu-24.04
+    outputs:
+      apk_name: ${{ steps.rename_apk.outputs.apk_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.41.9
+          channel: stable
+          cache: true
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Build APK (release)
+        run: flutter build apk --release --dart-define=API_BASE_URL=
+
+      - name: Rename APK with tag
+        id: rename_apk
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          src="build/app/outputs/flutter-apk/app-release.apk"
+          dst="build/app/outputs/flutter-apk/Railways-Secretariat-${tag}.apk"
+          mv "$src" "$dst"
+          echo "apk_path=$dst" >> "$GITHUB_OUTPUT"
+          echo "apk_name=$(basename "$dst")" >> "$GITHUB_OUTPUT"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-apk
+          path: ${{ steps.rename_apk.outputs.apk_path }}
+          retention-days: 7
+
+  build-windows:
+    name: Build Windows desktop
+    runs-on: windows-2022
+    outputs:
+      zip_name: ${{ steps.package_windows.outputs.zip_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.41.9
+          channel: stable
+          cache: true
+
+      - name: Enable Windows desktop
+        run: flutter config --enable-windows-desktop
+
+      - name: Install Flutter dependencies
+        run: flutter pub get
+
+      - name: Build Windows (release)
+        run: flutter build windows --release --dart-define=API_BASE_URL=
+
+      - name: Package Windows build
+        id: package_windows
+        shell: pwsh
+        run: |
+          $tag = $env:GITHUB_REF_NAME
+          $zipName = "Railways-Secretariat-$tag-windows-x64.zip"
+          $src = "build/windows/x64/runner/Release"
+          if (-not (Test-Path $src)) {
+            $src = "build/windows/runner/Release"
+          }
+          Compress-Archive -Path "$src/*" -DestinationPath $zipName -CompressionLevel Optimal
+          Write-Output "zip_path=$zipName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Output "zip_name=$zipName" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: ${{ steps.package_windows.outputs.zip_path }}
+          retention-days: 7
+
+  publish:
+    name: Publish GitHub Release
+    runs-on: ubuntu-24.04
+    needs: [build-android, build-windows]
+    steps:
+      - name: Download Android artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: android-apk
+          path: dist/
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-x64
+          path: dist/
+
+      - name: List artifacts
+        run: ls -la dist/
+
+      - name: Create / update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            dist/*.apk
+            dist/*.zip
