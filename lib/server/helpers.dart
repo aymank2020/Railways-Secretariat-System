@@ -13,6 +13,71 @@ class ApiException implements Exception {
   const ApiException(this.statusCode, this.message);
 }
 
+/// Translate a raw SQLite constraint error into a user-friendly
+/// [ApiException] with an Arabic message and an appropriate HTTP status.
+///
+/// The Dart server uses sqflite, which surfaces SQLite errors as
+/// `DatabaseException`s whose `toString()` contains the raw SQLite error
+/// text. We match on that text rather than on a typed enum because the
+/// constraint kind is the most reliable signal across sqflite versions and
+/// across native vs. FFI vs. web backends.
+///
+/// Returns `null` if [error] does not look like a known constraint
+/// violation; the caller should then fall through to its existing
+/// 500 / generic handler.
+ApiException? mapDatabaseConstraintError(Object error) {
+  final raw = error.toString();
+  final lowered = raw.toLowerCase();
+
+  // --- Foreign-key violation (e.g. trying to delete a user who authored
+  //     warid/sadir records, or referencing a non-existent classification).
+  if (lowered.contains('foreign key constraint failed')) {
+    return const ApiException(
+      HttpStatus.conflict,
+      'تعذّر إتمام العملية: يوجد سجلات أخرى مرتبطة بهذا العنصر. '
+      'يجب حذف السجلات المرتبطة أو إلغاء ربطها أولاً.',
+    );
+  }
+
+  // --- Unique-key violation (qaid_number, username, etc.).
+  if (lowered.contains('unique constraint failed')) {
+    final column = _extractFailingColumn(raw);
+    final hint = column != null ? ' (الحقل: $column)' : '';
+    return ApiException(
+      HttpStatus.conflict,
+      'القيمة المُدخلة موجودة مسبقاً ولا يمكن تكرارها$hint.',
+    );
+  }
+
+  // --- NOT NULL violation: a required column is missing.
+  if (lowered.contains('not null constraint failed')) {
+    final column = _extractFailingColumn(raw);
+    final hint = column != null ? ' ($column)' : '';
+    return ApiException(
+      HttpStatus.badRequest,
+      'حقل مطلوب لم يُملأ$hint.',
+    );
+  }
+
+  // --- CHECK constraint violation (e.g. role IN ('admin','user')).
+  if (lowered.contains('check constraint failed')) {
+    return const ApiException(
+      HttpStatus.badRequest,
+      'إحدى القيم المُدخلة غير مسموح بها وفقاً لقيود قاعدة البيانات.',
+    );
+  }
+
+  return null;
+}
+
+/// Extract the failing column name from a SQLite constraint error message
+/// of the form `... constraint failed: table.column`. Returns `null` when
+/// the format does not match.
+String? _extractFailingColumn(String raw) {
+  final match = RegExp(r'constraint failed:\s*([^\s]+)').firstMatch(raw);
+  return match?.group(1);
+}
+
 /// Maximum allowed request body size (25 MB).
 ///
 /// Attachments are uploaded as base64-encoded JSON strings, which inflate the

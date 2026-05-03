@@ -334,6 +334,30 @@ UCREDS
     _remove_personal_default_user "${admin_pass}" aymankamel24
 }
 
+install_backup_timer() {
+    # Install (or refresh) the systemd unit + timer that runs the nightly
+    # backup. Idempotent: re-running just re-copies the units and reloads.
+    local src_dir="${APP_DIR}/deploy/systemd"
+    local service_name="railways-secretariat-backup.service"
+    local timer_name="railways-secretariat-backup.timer"
+
+    if [[ ! -d "${src_dir}" ]]; then
+        log "Backup unit files not found at ${src_dir}; skipping timer install."
+        return 0
+    fi
+
+    log "Installing nightly backup timer (${timer_name})"
+    install -m 0644 "${src_dir}/${service_name}" "/etc/systemd/system/${service_name}"
+    install -m 0644 "${src_dir}/${timer_name}"   "/etc/systemd/system/${timer_name}"
+
+    mkdir -p /var/backups/railways-secretariat
+    chmod 0700 /var/backups/railways-secretariat
+
+    systemctl daemon-reload
+    systemctl enable --now "${timer_name}" >/dev/null
+    ok "Backup timer enabled. Next run: $(systemctl list-timers --all "${timer_name}" --no-legend 2>/dev/null | awk '{print $1, $2}' | head -1)"
+}
+
 main() {
     require_root
     ensure_packages
@@ -346,6 +370,7 @@ main() {
     wait_for_health
     rotate_admin_password
     harden_seeded_users
+    install_backup_timer
     log "Bootstrap complete."
     cat <<EOF
 
