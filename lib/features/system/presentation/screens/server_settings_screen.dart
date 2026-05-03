@@ -143,6 +143,19 @@ class _ServerSettingsScreenState extends State<ServerSettingsScreen>
     final scheme = Theme.of(context).colorScheme;
 
     return Scaffold(
+      extendBodyBehindAppBar: true,
+      appBar: widget.isInitialSetup
+          ? null
+          : AppBar(
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              foregroundColor: Colors.white,
+              iconTheme: const IconThemeData(color: Colors.white),
+              title: const Text(
+                'إعدادات السيرفر',
+                style: TextStyle(color: Colors.white),
+              ),
+            ),
       body: Container(
         decoration: const BoxDecoration(gradient: AppTheme.loginGradient),
         child: Stack(
