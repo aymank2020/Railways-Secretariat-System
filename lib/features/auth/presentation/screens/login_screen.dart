@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'package:railway_secretariat/core/services/server_settings_service.dart';
 import 'package:railway_secretariat/features/auth/presentation/providers/auth_provider.dart';
 import 'package:railway_secretariat/utils/app_theme.dart';
 
@@ -19,15 +20,35 @@ class _LoginScreenState extends State<LoginScreen> {
   final _formKey = GlobalKey<FormState>();
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
+  final _serverSettingsService = ServerSettingsService();
 
   bool _rememberMe = false;
   bool _obscurePassword = true;
+  String? _currentServerUrl;
 
   @override
   void initState() {
     super.initState();
     _usernameController.addListener(_clearErrorOnInput);
     _passwordController.addListener(_clearErrorOnInput);
+    _loadCurrentServerUrl();
+  }
+
+  Future<void> _loadCurrentServerUrl() async {
+    if (kIsWeb) {
+      // On web the API base URL always equals the page origin and the user
+      // cannot meaningfully change it from inside the app. Skip.
+      return;
+    }
+    final url = await _serverSettingsService.getSavedServerUrl();
+    if (!mounted) return;
+    setState(() {
+      _currentServerUrl = url;
+    });
+  }
+
+  void _openServerSettings() {
+    Navigator.of(context).pushNamed('/server-settings');
   }
 
   void _clearErrorOnInput() {
@@ -142,6 +163,15 @@ class _LoginScreenState extends State<LoginScreen> {
                         textDirection: TextDirection.ltr,
                         child: Row(
                           children: [
+                            if (!kIsWeb)
+                              IconButton(
+                                icon: const Icon(
+                                  Icons.settings_outlined,
+                                  color: Colors.white,
+                                ),
+                                tooltip: 'إعدادات السيرفر',
+                                onPressed: _openServerSettings,
+                              ),
                             const Spacer(),
                             IconButton(
                               icon: const Icon(Icons.remove, color: Colors.white),
@@ -163,6 +193,24 @@ class _LoginScreenState extends State<LoginScreen> {
                             ),
                           ],
                         ),
+                      ),
+                    )
+                  else if (!kIsWeb)
+                    SizedBox(
+                      height: 48,
+                      child: Row(
+                        textDirection: TextDirection.ltr,
+                        children: [
+                          IconButton(
+                            icon: const Icon(
+                              Icons.settings_outlined,
+                              color: Colors.white,
+                            ),
+                            tooltip: 'إعدادات السيرفر',
+                            onPressed: _openServerSettings,
+                          ),
+                          const Spacer(),
+                        ],
                       ),
                     ),
                   Expanded(
@@ -340,6 +388,10 @@ class _LoginScreenState extends State<LoginScreen> {
                                               ),
                                       ),
                                     ),
+                                    if (!kIsWeb) ...[
+                                      const SizedBox(height: 16),
+                                      _buildServerInfoFooter(scheme),
+                                    ],
                                   ],
                                 ),
                               ),
@@ -353,6 +405,52 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildServerInfoFooter(ColorScheme scheme) {
+    final url = _currentServerUrl;
+    final hasUrl = url != null && url.trim().isNotEmpty;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: _openServerSettings,
+        borderRadius: BorderRadius.circular(8),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                Icons.dns_outlined,
+                size: 16,
+                color: scheme.onSurface.withValues(alpha: 0.55),
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  hasUrl
+                      ? 'السيرفر: $url'
+                      : 'لم يتم تكوين السيرفر — اضغط للإعداد',
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: scheme.onSurface.withValues(alpha: 0.65),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Icon(
+                Icons.edit_outlined,
+                size: 14,
+                color: scheme.primary.withValues(alpha: 0.85),
+              ),
+            ],
+          ),
         ),
       ),
     );
