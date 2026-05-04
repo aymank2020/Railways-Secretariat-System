@@ -131,6 +131,12 @@ class _HomeScreenState extends State<HomeScreen> {
     // chrome + devtools) and the windowManager default of 1100x700, while
     // still leaving room for a narrow icons-only rail at 960–1099.
     final isWideRail = screenWidth >= 1100;
+    // Flutter Web has been observed not to honour NavigationRail's
+    // extended:true layout under our RTL setup — destinations stay icons-
+    // only even when the rail is supposed to expand. Force the compact
+    // (icons + labels-below) layout on web instead so labels are reliably
+    // visible. Native desktop builds keep the original extended layout.
+    final useExtendedRail = !kIsWeb && isWideRail;
     final isCompactScreen = screenWidth < 620;
 
     if (user == null) {
@@ -220,9 +226,10 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             if (showRail)
               NavigationRail(
-                extended: isWideRail,
+                extended: useExtendedRail,
                 minExtendedWidth: 230,
-                labelType: isWideRail ? null : NavigationRailLabelType.selected,
+                labelType:
+                    useExtendedRail ? null : NavigationRailLabelType.all,
                 selectedIndex: _selectedIndex,
                 onDestinationSelected: (index) {
                   setState(() {
@@ -264,7 +271,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     const SizedBox(height: 16),
                     Icon(Icons.train, size: 40, color: scheme.primary),
-                    if (isWideRail) ...[
+                    if (useExtendedRail) ...[
                       const SizedBox(height: 8),
                       const Text(
                         'السكك الحديدية',
@@ -301,7 +308,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       onPressed: () => authProvider.logout(),
                     ),
                     const SizedBox(height: 12),
-                    if (isWideRail)
+                    if (useExtendedRail)
                       SizedBox(
                         width: 210,
                         child: ListTile(
