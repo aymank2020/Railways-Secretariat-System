@@ -303,7 +303,7 @@ harden_seeded_users() {
         if [[ -f "${creds_file}" ]]; then
             cat >> "${creds_file}" <<UCREDS
 
-The default `user` account password was also rotated.
+The default 'user' account password was also rotated.
 
   Username: user
   Password: ${user_password}
@@ -311,7 +311,7 @@ UCREDS
         else
             install -m 0600 -o "${APP_USER}" -g "${APP_USER}" /dev/null "${creds_file}"
             cat > "${creds_file}" <<UCREDS
-The default \`user\` account password was rotated on this deploy.
+The default 'user' account password was rotated on this deploy.
 
   Username: user
   Password: ${user_password}
