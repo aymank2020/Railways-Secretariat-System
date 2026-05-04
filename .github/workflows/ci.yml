@@ -34,6 +34,13 @@ jobs:
         # not available in the server pubspec.
         run: dart analyze lib/server_main.dart lib/server
 
+      - name: Run unit + regression tests
+        # Two test files are server-safe (no Flutter imports):
+        #   * test/server_modules_test.dart   — helpers, middleware, sessions
+        #   * test/security_hardening_test.dart — PR #6/#7/#9 regression suite
+        # The wider Flutter widget tests run under flutter-web's analyze step.
+        run: dart test test/server_modules_test.dart test/security_hardening_test.dart
+
       - name: Compile server binary
         run: |
           mkdir -p build_artifacts
@@ -52,6 +59,69 @@ jobs:
           sleep 4
           curl --fail --silent --max-time 5 "http://127.0.0.1:${SECRETARIAT_SERVER_PORT}/api/health"
           kill "${SERVER_PID}" || true
+
+  shellcheck:
+    name: Shellcheck (deploy scripts)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run shellcheck
+        # Lint every shell script under deploy/scripts/. -S error keeps the
+        # noise floor low: only fail CI on definite bugs, not style nags.
+        # Run via xargs so the action returns a non-zero exit if *any*
+        # script fails, rather than masking errors behind shell short-circuit.
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends shellcheck
+          find deploy/scripts -type f -name '*.sh' -print0 \
+            | xargs -0 -r shellcheck -S error
+
+  hadolint:
+    name: Hadolint (Dockerfiles)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Lint Dockerfile.server
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: deploy/Dockerfile.server
+          # Treat warnings as info to avoid blocking on style issues; only
+          # fail on actual errors. Tighten later if desired.
+          failure-threshold: error
+
+      - name: Lint Dockerfile.web
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: deploy/Dockerfile.web
+          failure-threshold: error
+
+  trivy-fs:
+    name: Trivy filesystem scan
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Trivy filesystem scan
+        # Scan the repo source tree for known vulnerabilities in declared
+        # dependencies (pubspec.lock, package files), and for misconfigured
+        # IaC/Dockerfiles. Surface CRITICAL/HIGH only — LOW/MEDIUM
+        # findings tend to be informational and would generate too much
+        # noise on every PR. Vulnerability DB updates are cached by the
+        # action.
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+          exit-code: '1'
+          format: 'table'
 
   flutter-web:
     name: Flutter Web build
