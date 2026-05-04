@@ -1003,17 +1003,14 @@ class DatabaseService {
       );
     }
 
-    // Legacy plaintext fallback.
-    return (row['password'] ?? '').toString() == plainPassword;
-  }
-
-  String? _getDefaultPasswordForUsername(String username) {
-    for (final user in UserModel.getDefaultUsers()) {
-      if (user.username.toLowerCase() == username.toLowerCase()) {
-        return user.password;
-      }
-    }
-    return null;
+    // Fail-closed: a row without hash/salt/algo cannot be authenticated.
+    // The previous implementation accepted a plaintext password when the
+    // hashed columns were missing, which made it possible for any row
+    // bootstrapped with the legacy `password` column to bypass PBKDF2.
+    // Every existing user has been re-hashed by `_upgradeStoredPasswords`
+    // and the seed migrations, so an absent hash now genuinely indicates
+    // a corrupt row that must NOT log in.
+    return false;
   }
 
   Future<int> _insertUserInternal(Database db, UserModel user) async {
@@ -1185,39 +1182,34 @@ class DatabaseService {
       }
 
       final row = maps.first;
-      final usernameFromDb = (row['username'] ?? '').toString();
       final iterations = row['password_iterations'] is int
           ? row['password_iterations'] as int
           : int.tryParse((row['password_iterations'] ?? '0').toString()) ?? 0;
 
-      bool isValid;
-      final defaultPassword = _getDefaultPasswordForUsername(usernameFromDb);
-      final useFastPath =
-          kIsWeb && defaultPassword != null && password == defaultPassword;
-
-      if (useFastPath) {
-        isValid = true;
-        _debugLog('authenticate fast-path accepted');
-      } else {
-        _debugLog('authenticate verify hash start');
-        isValid = _verifyPasswordFromRow(row, password);
-        _debugLog('authenticate verify hash done valid=$isValid');
-      }
+      // PBKDF2 verification is the *only* path. The previous code had a
+      // `useFastPath` branch that accepted the well-known seed password
+      // (e.g. `admin123`, `user123`) on web even after rotation, allowing a
+      // rotated default password to be silently reset back to the seed.
+      // After PR #6's `harden_seeded_users` rotates seeds at deploy time,
+      // any login attempt with the seed value must be rejected.
+      _debugLog('authenticate verify hash start');
+      final isValid = _verifyPasswordFromRow(row, password);
+      _debugLog('authenticate verify hash done valid=$isValid');
       if (!isValid) {
         return null;
       }
 
       final userId = row['id'] as int;
 
-      // Upgrade any legacy plaintext record to hashed format on successful login.
-      final hasSecureFields =
-          (row['password_hash'] ?? '').toString().isNotEmpty &&
-              (row['password_salt'] ?? '').toString().isNotEmpty &&
-              (row['password_algo'] ?? '').toString().isNotEmpty;
+      // Web stores fewer PBKDF2 iterations to stay responsive in the browser.
+      // If a row was hashed natively (high iteration count) and is then read
+      // by the web build, transparently re-hash with the lower count so the
+      // next login is faster. We never re-hash to a *higher* count here —
+      // that path is owned by the migration runner.
       final needsWebIterationDowngrade =
           kIsWeb && iterations > _passwordService.recommendedIterations;
-      if (!hasSecureFields || needsWebIterationDowngrade) {
-        _debugLog('authenticate updating password fields');
+      if (needsWebIterationDowngrade) {
+        _debugLog('authenticate downgrading PBKDF2 iterations for web');
         await _withWebTimeout(
           db.update(
             'users',
