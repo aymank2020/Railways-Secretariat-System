@@ -59,3 +59,12 @@ flutter:
   uses-material-design: true
   assets:
     - assets/templates/warid_a3_template.png
+  # Bundled fonts so the Web build does not have to fetch glyph files from
+  # fonts.gstatic.com at runtime — that path is blocked by our strict CSP
+  # (default-src 'self'). Noto Sans Arabic is a variable font that already
+  # covers all weights from one .ttf, plus a full Latin range, so it can
+  # serve as the single fontFamily for the whole UI.
+  fonts:
+    - family: NotoSansArabic
+      fonts:
+        - asset: assets/fonts/NotoSansArabic-Regular.ttf
