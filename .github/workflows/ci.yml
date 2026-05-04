@@ -114,7 +114,7 @@ jobs:
         # findings tend to be informational and would generate too much
         # noise on every PR. Vulnerability DB updates are cached by the
         # action.
-        uses: aquasecurity/trivy-action@0.36.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: 'fs'
           scan-ref: '.'
