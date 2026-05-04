@@ -36,6 +36,7 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
+import 'package:railway_secretariat/features/auth/data/datasources/password_service.dart';
 import 'package:railway_secretariat/server/helpers.dart';
 import 'package:railway_secretariat/server/middleware.dart';
 
@@ -331,6 +332,81 @@ void main() {
       final retry = limiter.retryAfterSeconds('9.9.9.9');
       expect(retry, greaterThan(0));
       expect(retry, lessThanOrEqualTo(30));
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Seed-password drift detection (PR #4 — recovery from accidental re-seed)
+  //
+  // Production hit a regression where the data volume was migrated/recreated
+  // between two deploys, which caused `_seedDefaultUsers` to re-insert
+  // `admin` with the well-known seed password (`admin123`). Because
+  // `INITIAL_CREDENTIALS.txt` was preserved on the host, the bootstrap
+  // script's first-deploy gate skipped re-rotation, and the only thing
+  // hiding the regression was the legacy plaintext fallback in
+  // `_verifyPasswordFromRow` — which PR #8 then correctly removed.
+  //
+  // These tests cover the underlying primitive (`PasswordService.verifyPassword`)
+  // that `DatabaseService.findUsersWithDefaultSeedPasswords` (server startup
+  // banner) and the rotated-credential audit path both rely on.
+  // ---------------------------------------------------------------------------
+
+  group('seed-password drift detection', () {
+    final service = PasswordService();
+
+    test('a row hashed from the seed password verifies as the seed', () {
+      // Re-create the exact format used by `_buildPasswordFields` so the
+      // assertion exercises the real production code path.
+      final hashed =
+          service.hashPassword('admin123', iterations: 1000); // fast for tests
+      final isSeed = service.verifyPassword(
+        plainPassword: 'admin123',
+        saltBase64: hashed.saltBase64,
+        storedHashBase64: hashed.hashBase64,
+        storedAlgorithm: hashed.algorithm,
+        iterations: hashed.iterations,
+      );
+      expect(isSeed, isTrue,
+          reason: 'admin/admin123 must be detectable post-re-seed');
+    });
+
+    test('a row hashed from a rotated password does not verify as the seed',
+        () {
+      final hashed = service.hashPassword('correct horse battery staple',
+          iterations: 1000);
+      final isSeed = service.verifyPassword(
+        plainPassword: 'admin123',
+        saltBase64: hashed.saltBase64,
+        storedHashBase64: hashed.hashBase64,
+        storedAlgorithm: hashed.algorithm,
+        iterations: hashed.iterations,
+      );
+      expect(isSeed, isFalse,
+          reason:
+              'a properly rotated admin must not be flagged as still-on-seed');
+    });
+
+    test('verification fails closed when hash columns are blank', () {
+      final isSeed = service.verifyPassword(
+        plainPassword: 'admin123',
+        saltBase64: '',
+        storedHashBase64: '',
+        storedAlgorithm: 'pbkdf2_sha256',
+        iterations: 120000,
+      );
+      expect(isSeed, isFalse);
+    });
+
+    test('verification fails closed on algorithm mismatch', () {
+      final hashed = service.hashPassword('admin123', iterations: 1000);
+      final isSeed = service.verifyPassword(
+        plainPassword: 'admin123',
+        saltBase64: hashed.saltBase64,
+        storedHashBase64: hashed.hashBase64,
+        storedAlgorithm: 'bcrypt', // wrong algorithm
+        iterations: hashed.iterations,
+      );
+      expect(isSeed, isFalse);
     });
   });
 }
