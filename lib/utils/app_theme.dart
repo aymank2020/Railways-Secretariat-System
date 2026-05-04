@@ -39,6 +39,10 @@ class AppTheme {
       brightness: isDark ? Brightness.dark : Brightness.light,
       primaryColor: scheme.primary,
       colorScheme: scheme,
+      // Bundled in pubspec.yaml under assets/fonts/. Setting it here means
+      // every text widget uses the local font instead of triggering Flutter
+      // Web's runtime fetch from fonts.gstatic.com, which the CSP blocks.
+      fontFamily: 'NotoSansArabic',
       scaffoldBackgroundColor: isDark ? _darkBackground : _lightBackground,
       appBarTheme: AppBarTheme(
         elevation: 0,
