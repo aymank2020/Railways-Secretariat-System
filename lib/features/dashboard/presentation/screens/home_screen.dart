@@ -127,7 +127,10 @@ class _HomeScreenState extends State<HomeScreen> {
         !kIsWeb && (Platform.isWindows || Platform.isLinux || Platform.isMacOS);
     final screenWidth = MediaQuery.of(context).size.width;
     final showRail = screenWidth >= 960;
-    final isWideRail = screenWidth >= 1400;
+    // 1100 catches the typical desktop browser viewport (1366/1440 minus
+    // chrome + devtools) and the windowManager default of 1100x700, while
+    // still leaving room for a narrow icons-only rail at 960–1099.
+    final isWideRail = screenWidth >= 1100;
     final isCompactScreen = screenWidth < 620;
 
     if (user == null) {
