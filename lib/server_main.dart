@@ -119,7 +119,7 @@ Future<void> main() async {
       final banner = '!' * 72;
       stderr.writeln(banner);
       stderr.writeln(
-        'WARNING: ${stale.length} seeded account(s) still use the default '
+        'CRITICAL: ${stale.length} seeded account(s) still use the default '
         'password: ${stale.join(', ')}',
       );
       stderr.writeln(

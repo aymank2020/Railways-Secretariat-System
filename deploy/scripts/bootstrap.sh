@@ -330,14 +330,20 @@ harden_seeded_users() {
     fi
 
     # Delete legacy personal account `aymankamel24` if it survived from earlier
-    # deployments. We need an admin password to call /api/users; the most
-    # recent admin entry in INITIAL_CREDENTIALS.txt is the live one because
-    # rotate_admin_password appends instead of overwriting.
+    # deployments. We need an admin password to call /api/users; pull the
+    # most recent admin block out of INITIAL_CREDENTIALS.txt — *not* the
+    # last `Password:` line, because the file may also contain a `user`
+    # block from a same-deploy rotation.
+    local admin_user="${RAILWAYS_SEED_ADMIN_USER:-admin}"
     local admin_pass
     if [[ -f "${creds_file}" ]]; then
-        admin_pass="$(awk '/^  Password:/ {print $2}' "${creds_file}" | tail -1 || true)"
+        admin_pass="$(awk -v u="${admin_user}" '
+            /^  Username: / && $2 == u { in_admin = 1; next }
+            in_admin && /^  Password:/ { last = $2; in_admin = 0 }
+            END { print last }
+        ' "${creds_file}" || true)"
     fi
-    [[ -z "${admin_pass:-}" ]] && admin_pass="${RAILWAYS_SEED_ADMIN_PASSWORD:-admin$(printf '%d' 123)}"
+    [[ -z "${admin_pass:-}" ]] && admin_pass="${RAILWAYS_SEED_ADMIN_PASSWORD:-${admin_user}$(printf '%d' 123)}"
     _remove_personal_default_user "${admin_pass}" aymankamel24
 }
 
