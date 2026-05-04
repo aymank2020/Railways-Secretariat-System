@@ -106,6 +106,32 @@ Future<void> main() async {
   final sessionStore = SessionStore();
   await sessionStore.initialize(db);
 
+  // Read-only audit: shout if any seeded account is still using its
+  // well-known default password. This typically happens after a data-volume
+  // migration silently re-seeds `admin` back to `admin123` but the operator
+  // already had INITIAL_CREDENTIALS.txt on disk, so bootstrap.sh's first-
+  // deploy gate skipped re-rotation. The warning is repeated to stderr so
+  // it surfaces in `docker logs` on every restart until the operator runs
+  // `bootstrap.sh` (which now re-rotates idempotently).
+  try {
+    final stale = await databaseService.findUsersWithDefaultSeedPasswords();
+    if (stale.isNotEmpty) {
+      final banner = '!' * 72;
+      stderr.writeln(banner);
+      stderr.writeln(
+        'CRITICAL: ${stale.length} seeded account(s) still use the default '
+        'password: ${stale.join(', ')}',
+      );
+      stderr.writeln(
+        'Run `sudo bash ${Platform.environment['SECRETARIAT_BOOTSTRAP_PATH'] ?? '/opt/railways-secretariat-flutter/deploy/scripts/bootstrap.sh'}` '
+        'to rotate them, or change the password from the user settings page.',
+      );
+      stderr.writeln(banner);
+    }
+  } catch (e) {
+    stderr.writeln('Warning: seed-password audit failed: $e');
+  }
+
   final server = await HttpServer.bind(host, port);
   stdout.writeln('Railway Secretariat API listening on http://$host:$port');
   stdout.writeln(

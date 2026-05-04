@@ -255,38 +255,61 @@ _remove_personal_default_user() {
         || warn "Could not remove '${target_username}' — check audit log."
 }
 
-# One-shot: rotate the seeded admin account on first deploy and persist the
-# generated password to INITIAL_CREDENTIALS.txt (mode 0600).
+# Append a freshly-rotated credential entry to INITIAL_CREDENTIALS.txt. The
+# file is created on first use (mode 0600) and grows monotonically with one
+# block per rotation so operators can always recover the *current* password.
+_append_credential_entry() {
+    local creds_file="$1" username="$2" password="$3"
+    local timestamp; timestamp="$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+    if [[ ! -f "${creds_file}" ]]; then
+        install -m 0600 -o "${APP_USER}" -g "${APP_USER}" /dev/null "${creds_file}"
+        cat > "${creds_file}" <<HEADER
+Railway Secretariat — rotated default credentials
+==================================================
+
+This file is written by deploy/scripts/bootstrap.sh whenever a seeded
+account (admin, user, ...) is found to still have its default password.
+Entries are appended; the most recent block for each username is the one
+currently active in the database.
+
+Keep this file out of source control. After verifying the values you can
+shred it with:  shred -u ${creds_file}
+
+HEADER
+    fi
+    cat >> "${creds_file}" <<ENTRY
+[${timestamp}] '${username}' password rotated:
+  Username: ${username}
+  Password: ${password}
+
+ENTRY
+    chmod 0600 "${creds_file}"
+    chown "${APP_USER}:${APP_USER}" "${creds_file}"
+}
+
+# Idempotent: tries to rotate the seeded admin account from `admin123` (or
+# the values in RAILWAYS_SEED_ADMIN_USER / RAILWAYS_SEED_ADMIN_PASSWORD) on
+# every deploy. Silently no-ops when the seed value no longer works.
+#
+# History: a previous version of this function only ran on the *first*
+# deploy (gated on the existence of INITIAL_CREDENTIALS.txt). When the
+# data volume was migrated/recreated between deploys, admin was re-seeded
+# back to `admin123` but the file on the host kept its first-deploy value,
+# so subsequent deploys silently skipped re-rotation. Running this every
+# time closes that window.
 rotate_admin_password() {
     local creds_file="${APP_DIR}/INITIAL_CREDENTIALS.txt"
-    if [[ -f "${creds_file}" ]]; then
-        ok "INITIAL_CREDENTIALS.txt already exists — skipping admin rotation"
-        return
-    fi
-    log "Rotating default admin password"
     local seed_user="${RAILWAYS_SEED_ADMIN_USER:-admin}"
     local seed_pass="${RAILWAYS_SEED_ADMIN_PASSWORD:-${seed_user}$(printf '%d' 123)}"
+    log "Checking admin account for default password"
     local new_password
     new_password="$(_rotate_seeded_account "${seed_user}" "${seed_pass}")"
     if [[ -z "${new_password}" ]]; then
-        warn "Admin rotation skipped — please rotate manually if needed."
+        ok "Admin already rotated (or seed password no longer works) — nothing to do."
         return
     fi
-    install -m 0600 -o "${APP_USER}" -g "${APP_USER}" /dev/null "${creds_file}"
-    cat > "${creds_file}" <<CREDS
-The default admin password was rotated on first deploy.
-
-  Username: admin
-  Password: ${new_password}
-
-Please log in immediately and change this password again from the user
-settings page.  After verifying, you can shred this file:
-
-  shred -u ${creds_file}
-CREDS
-    chmod 0600 "${creds_file}"
-    chown "${APP_USER}:${APP_USER}" "${creds_file}"
-    ok "Stored rotated credentials at ${creds_file} (mode 600)"
+    _append_credential_entry "${creds_file}" "${seed_user}" "${new_password}"
+    ok "Rotated '${seed_user}' from default seed; new value appended to ${creds_file}"
 }
 
 # Runs on every bootstrap: silently rotates the seeded `user` account if its
@@ -300,37 +323,27 @@ harden_seeded_users() {
     local user_password
     user_password="$(_rotate_seeded_account user "user$(printf '%d' 123)" || true)"
     if [[ -n "${user_password}" ]]; then
-        if [[ -f "${creds_file}" ]]; then
-            cat >> "${creds_file}" <<UCREDS
-
-The default 'user' account password was also rotated.
-
-  Username: user
-  Password: ${user_password}
-UCREDS
-        else
-            install -m 0600 -o "${APP_USER}" -g "${APP_USER}" /dev/null "${creds_file}"
-            cat > "${creds_file}" <<UCREDS
-The default 'user' account password was rotated on this deploy.
-
-  Username: user
-  Password: ${user_password}
-UCREDS
-        fi
-        chmod 0600 "${creds_file}"
-        chown "${APP_USER}:${APP_USER}" "${creds_file}"
+        _append_credential_entry "${creds_file}" user "${user_password}"
         ok "Rotated 'user' account password and appended to INITIAL_CREDENTIALS.txt"
     else
         ok "'user' account already rotated (or absent) — nothing to do."
     fi
 
     # Delete legacy personal account `aymankamel24` if it survived from earlier
-    # deployments. We need an admin password to call /api/users.
+    # deployments. We need an admin password to call /api/users; pull the
+    # most recent admin block out of INITIAL_CREDENTIALS.txt — *not* the
+    # last `Password:` line, because the file may also contain a `user`
+    # block from a same-deploy rotation.
+    local admin_user="${RAILWAYS_SEED_ADMIN_USER:-admin}"
     local admin_pass
     if [[ -f "${creds_file}" ]]; then
-        admin_pass="$(awk '/^  Password:/ {print $2; exit}' "${creds_file}" || true)"
+        admin_pass="$(awk -v u="${admin_user}" '
+            /^  Username: / && $2 == u { in_admin = 1; next }
+            in_admin && /^  Password:/ { last = $2; in_admin = 0 }
+            END { print last }
+        ' "${creds_file}" || true)"
     fi
-    [[ -z "${admin_pass:-}" ]] && admin_pass="${RAILWAYS_SEED_ADMIN_PASSWORD:-admin$(printf '%d' 123)}"
+    [[ -z "${admin_pass:-}" ]] && admin_pass="${RAILWAYS_SEED_ADMIN_PASSWORD:-${admin_user}$(printf '%d' 123)}"
     _remove_personal_default_user "${admin_pass}" aymankamel24
 }
 

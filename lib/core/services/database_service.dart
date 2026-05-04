@@ -1013,6 +1013,49 @@ class DatabaseService {
     return false;
   }
 
+  /// Returns the usernames whose stored PBKDF2 hash still matches the
+  /// well-known seed password for that account (e.g. `admin/admin123`).
+  ///
+  /// Used by the server's startup banner to emit a CRITICAL warning when
+  /// production has drifted back to a default credential — typically after
+  /// a data-volume migration silently re-seeded the row but the operator's
+  /// `INITIAL_CREDENTIALS.txt` was preserved, so `bootstrap.sh` skipped
+  /// re-rotation. Read-only: never mutates the database.
+  Future<List<String>> findUsersWithDefaultSeedPasswords() async {
+    final db = await database;
+    final defaults = UserModel.getDefaultUsers();
+    if (defaults.isEmpty) {
+      return const [];
+    }
+    final placeholders = List.filled(defaults.length, '?').join(', ');
+    final rows = await db.query(
+      'users',
+      columns: [
+        'username',
+        'password_hash',
+        'password_salt',
+        'password_algo',
+        'password_iterations',
+      ],
+      where: 'LOWER(username) IN ($placeholders)',
+      whereArgs:
+          defaults.map((u) => u.username.toLowerCase()).toList(growable: false),
+    );
+    final byUsername = <String, UserModel>{
+      for (final u in defaults) u.username.toLowerCase(): u,
+    };
+    final findings = <String>[];
+    for (final row in rows) {
+      final username = (row['username'] ?? '').toString();
+      final seed = byUsername[username.toLowerCase()];
+      if (seed == null) continue;
+      if (_verifyPasswordFromRow(row, seed.password)) {
+        findings.add(username);
+      }
+    }
+    return findings;
+  }
+
   Future<int> _insertUserInternal(Database db, UserModel user) async {
     final map = user.toMap(includePassword: false)..remove('id');
     map.addAll(_buildPasswordFields(user.password));
