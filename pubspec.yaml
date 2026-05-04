@@ -64,7 +64,25 @@ flutter:
   # (default-src 'self'). Noto Sans Arabic is a variable font that already
   # covers all weights from one .ttf, plus a full Latin range, so it can
   # serve as the single fontFamily for the whole UI.
+  #
+  # The same .ttf file is referenced for every weight Material 3 widgets
+  # request (400/500/600/700) — without explicit weight entries, Flutter
+  # treats the family as a single-weight font and CanvasKit falls back to
+  # downloading the missing weights from Google Fonts at runtime, which
+  # the CSP then blocks and surfaces as 1000+ console errors plus invisible
+  # / clipped labels in the NavigationRail at 100% zoom.
   fonts:
     - family: NotoSansArabic
       fonts:
         - asset: assets/fonts/NotoSansArabic-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/NotoSansArabic-Regular.ttf
+          weight: 500
+        - asset: assets/fonts/NotoSansArabic-Regular.ttf
+          weight: 600
+        - asset: assets/fonts/NotoSansArabic-Regular.ttf
+          weight: 700
+        - asset: assets/fonts/NotoSansArabic-Regular.ttf
+          weight: 800
+        - asset: assets/fonts/NotoSansArabic-Regular.ttf
+          weight: 900
