@@ -183,6 +183,41 @@ class SessionStore {
     await _removeFromDb(token);
   }
 
+  /// Revoke every session that belongs to [userId], optionally keeping a
+  /// single live token (e.g. the one the caller is currently using to
+  /// rotate their own password). Used after a password change so that any
+  /// other device that had a live token must re-authenticate.
+  Future<int> removeAllSessionsForUser(
+    int userId, {
+    String? exceptToken,
+  }) async {
+    final removedTokens = <String>[];
+    _cache.removeWhere((token, session) {
+      if (session.userId != userId) return false;
+      if (exceptToken != null && token == exceptToken) return false;
+      removedTokens.add(token);
+      return true;
+    });
+
+    final db = _db;
+    if (db != null) {
+      if (exceptToken != null) {
+        await db.delete(
+          'server_sessions',
+          where: 'user_id = ? AND token != ?',
+          whereArgs: [userId, exceptToken],
+        );
+      } else {
+        await db.delete(
+          'server_sessions',
+          where: 'user_id = ?',
+          whereArgs: [userId],
+        );
+      }
+    }
+    return removedTokens.length;
+  }
+
   Future<void> _removeFromDb(String token) async {
     final db = _db;
     if (db == null) return;
