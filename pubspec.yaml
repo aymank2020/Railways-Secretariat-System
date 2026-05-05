@@ -23,6 +23,11 @@ dependencies:
   # Storage
   shared_preferences: ^2.2.2
   path_provider: ^2.1.1
+  # OS-keychain-backed credential storage. Replaces the in-source XOR
+  # cipher used by EncryptedCredentialsRepository. Uses Keychain on
+  # iOS/macOS, Keystore on Android, DPAPI on Windows, libsecret on
+  # Linux, and an AES-GCM key in IndexedDB on Web.
+  flutter_secure_storage: ^9.2.2
 
   # UI Components
   data_table_2: ^2.5.10
