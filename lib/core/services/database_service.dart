@@ -1219,8 +1219,15 @@ class DatabaseService {
       }
 
       // No dirty rows seen for this table → unique index is now
-      // sufficient for future calls.
-      if (!hadDirtyRow) {
+      // sufficient for future calls. We only promote the cache on the
+      // insert path (excludeId == null), because an update call's
+      // dirty scan deliberately filters out the row being updated:
+      // if that row was the *only* dirty one, hadDirtyRow would still
+      // be false, and a subsequent insert for a different qaid_number
+      // could skip the legacy check while the dirty row is still
+      // sitting in the table. Insert calls scan every row and produce
+      // a sound clean verdict.
+      if (!hadDirtyRow && excludeId == null) {
         _qaidNumberCleanTables.add(table);
       }
     }
