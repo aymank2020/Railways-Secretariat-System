@@ -389,7 +389,17 @@ class _WaridSearchScreenState extends State<WaridSearchScreen> {
       ),
       body: Column(
         children: [
-          Padding(
+          // The filter Card grows with the number of advanced filters and on
+          // short viewports (laptops at 100% zoom, tablets in landscape) the
+          // bottom action buttons used to overflow off-screen with no way to
+          // reach them. Wrap it in Flexible(fit: loose) + SingleChildScrollView
+          // so it can scroll within whatever vertical room is left after the
+          // results pane below claims its share. The Card still expands to its
+          // intrinsic height when there is enough space.
+          Flexible(
+            fit: FlexFit.loose,
+            child: SingleChildScrollView(
+              child: Padding(
             padding: const EdgeInsets.all(16),
             child: Card(
               child: Padding(
@@ -509,6 +519,8 @@ class _WaridSearchScreenState extends State<WaridSearchScreen> {
                   ],
                 ),
               ),
+            ),
+          ),
             ),
           ),
           Expanded(
