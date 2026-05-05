@@ -63,6 +63,16 @@ class DatabaseService {
   final StorageLocationService _storageLocationService =
       StorageLocationService();
 
+  /// Tracks tables where every `qaid_number` is already in canonical
+  /// form (digits-only, no surrounding whitespace, no Arabic/Eastern
+  /// Arabic-Indic digits). Once a table is marked clean here, the
+  /// validator can rely on the unique index alone and skip the legacy
+  /// secondary scan that previously fetched every row into memory and
+  /// re-normalised it in Dart (the O(N)-per-insert path called out in
+  /// the §6.1 finding). The set is process-local because the migration
+  /// state lives in SQLite — restarts re-verify lazily.
+  final Set<String> _qaidNumberCleanTables = <String>{};
+
   factory DatabaseService() => _instance;
 
   DatabaseService._internal();
@@ -1159,27 +1169,59 @@ class DatabaseService {
           '\u0631\u0642\u0645 \u0627\u0644\u0642\u064a\u062f $normalizedQaid \u0645\u0633\u062c\u0644 \u0628\u0627\u0644\u0641\u0639\u0644 \u0648\u0644\u0627 \u064a\u0645\u0643\u0646 \u062a\u0643\u0631\u0627\u0631\u0647.');
     }
 
-    // Secondary check to catch legacy records saved with spaces/Arabic digits.
-    var legacyWhereClause = '';
-    final legacyWhereArgs = <Object>[];
-    if (excludeId != null) {
-      legacyWhereClause = 'id != ?';
-      legacyWhereArgs.add(excludeId);
-    }
-    final allRows = await _withWebTimeout(
-      db.query(
-        table,
-        columns: ['id', 'qaid_number'],
-        where: legacyWhereClause.isEmpty ? null : legacyWhereClause,
-        whereArgs: legacyWhereArgs.isEmpty ? null : legacyWhereArgs,
-      ),
-    );
-    for (final row in allRows) {
-      final existing =
-          _normalizeQaidNumber((row['qaid_number'] ?? '').toString());
-      if (existing == normalizedQaid) {
-        throw StateError(
-            '\u0631\u0642\u0645 \u0627\u0644\u0642\u064a\u062f $normalizedQaid \u0645\u0633\u062c\u0644 \u0628\u0627\u0644\u0641\u0639\u0644 \u0648\u0644\u0627 \u064a\u0645\u0643\u0646 \u062a\u0643\u0631\u0627\u0631\u0647.');
+    // Secondary check to catch legacy records saved with spaces or
+    // Arabic / Eastern Arabic-Indic digits. The previous version fetched
+    // every row in the table into Dart memory and normalised in a loop —
+    // O(N) per insert/update, O(N²) on large imports (§6.1). Two-stage
+    // optimisation:
+    //
+    //   1. Push the "is this row dirty?" decision into SQL using GLOB
+    //      and TRIM, so SQLite returns only rows that *might* clash with
+    //      the normalised value. A clean numeric column returns zero
+    //      rows directly from the engine.
+    //   2. Cache the "table is clean" verdict in [_qaidNumberCleanTables]
+    //      after the first all-clean scan. Subsequent inserts skip the
+    //      query entirely and rely on the unique index alone.
+    //
+    // The fallback semantics are unchanged: a dirty row whose normalised
+    // form matches still raises the same StateError.
+    if (!_qaidNumberCleanTables.contains(table)) {
+      final dirtyWhereParts = <String>[
+        // Anything outside the ASCII digit set OR with whitespace at the
+        // edges is potentially non-canonical and worth re-checking.
+        "(qaid_number GLOB '*[^0-9]*' OR qaid_number != TRIM(qaid_number))",
+      ];
+      final dirtyWhereArgs = <Object>[];
+      if (excludeId != null) {
+        dirtyWhereParts.add('id != ?');
+        dirtyWhereArgs.add(excludeId);
+      }
+      final dirtyWhere = dirtyWhereParts.join(' AND ');
+
+      final dirtyRows = await _withWebTimeout(
+        db.query(
+          table,
+          columns: ['id', 'qaid_number'],
+          where: dirtyWhere,
+          whereArgs: dirtyWhereArgs.isEmpty ? null : dirtyWhereArgs,
+        ),
+      );
+
+      var hadDirtyRow = false;
+      for (final row in dirtyRows) {
+        hadDirtyRow = true;
+        final existing =
+            _normalizeQaidNumber((row['qaid_number'] ?? '').toString());
+        if (existing == normalizedQaid) {
+          throw StateError(
+              '\u0631\u0642\u0645 \u0627\u0644\u0642\u064a\u062f $normalizedQaid \u0645\u0633\u062c\u0644 \u0628\u0627\u0644\u0641\u0639\u0644 \u0648\u0644\u0627 \u064a\u0645\u0643\u0646 \u062a\u0643\u0631\u0627\u0631\u0647.');
+        }
+      }
+
+      // No dirty rows seen for this table → unique index is now
+      // sufficient for future calls.
+      if (!hadDirtyRow) {
+        _qaidNumberCleanTables.add(table);
       }
     }
 
@@ -1325,6 +1367,7 @@ class DatabaseService {
       }
     } catch (_) {}
     _database = null;
+    _qaidNumberCleanTables.clear();
     await _withWebTimeout(deleteDatabase('secretariat.db'));
     _database = await _withWebTimeout(_initDatabase());
     _debugLog('web recovery done');
@@ -2109,5 +2152,6 @@ class DatabaseService {
       _database = null;
     }
     _webRecoveryAttempted = false;
+    _qaidNumberCleanTables.clear();
   }
 }
