@@ -385,9 +385,28 @@ class _SadirSearchScreenState extends State<SadirSearchScreen> {
       appBar: AppBar(
         title: const Text('البحث في الصادر'),
       ),
-      body: Column(
+      body: LayoutBuilder(
+        builder: (context, constraints) => Column(
         children: [
-          Padding(
+          // The filter Card grows with the number of advanced filters and on
+          // short viewports (laptops at 100% zoom, tablets in landscape) the
+          // bottom action buttons used to overflow off-screen with no way to
+          // reach them. Two requirements:
+          //   1. Tall viewports: filter takes its intrinsic height and the
+          //      results table (Expanded) gets *all* remaining space.
+          //   2. Short viewports: filter caps at 60% of body height and
+          //      scrolls within that cap; the results table still gets at
+          //      least 40% so it stays usable.
+          // Wrapping in Flexible would compete with Expanded(flex: 1) and
+          // split the Column 50/50 — leaving dead space when the filter is
+          // small. Instead use a non-flex ConstrainedBox(maxHeight: 60%)
+          // around a SingleChildScrollView: ConstrainedBox takes the
+          // intrinsic min(content, cap) height, Expanded reclaims the rest.
+          ConstrainedBox(
+            constraints:
+                BoxConstraints(maxHeight: constraints.maxHeight * 0.6),
+            child: SingleChildScrollView(
+              child: Padding(
             padding: const EdgeInsets.all(16),
             child: Card(
               child: Padding(
@@ -509,6 +528,8 @@ class _SadirSearchScreenState extends State<SadirSearchScreen> {
               ),
             ),
           ),
+            ),
+          ),
           Expanded(
             child: docProvider.isLoading
                 ? const Center(child: CircularProgressIndicator())
@@ -606,6 +627,7 @@ class _SadirSearchScreenState extends State<SadirSearchScreen> {
                       ),
           ),
         ],
+      ),
       ),
     );
   }

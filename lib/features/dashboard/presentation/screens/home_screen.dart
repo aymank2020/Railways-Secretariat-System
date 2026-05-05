@@ -225,131 +225,172 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Row(
           children: [
             if (showRail)
-              NavigationRail(
-                extended: useExtendedRail,
-                minExtendedWidth: 230,
-                labelType:
-                    useExtendedRail ? null : NavigationRailLabelType.all,
-                selectedIndex: _selectedIndex,
-                onDestinationSelected: (index) {
-                  setState(() {
-                    _selectedIndex = index;
-                  });
-                },
-                leading: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (isDesktop)
-                      SizedBox(
-                        height: 40,
-                        child: Directionality(
-                          textDirection: TextDirection.ltr,
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: [
-                              IconButton(
-                                icon: const Icon(Icons.remove, size: 18),
-                                onPressed: () => windowManager.minimize(),
+              // Wrap the rail in a LayoutBuilder + SingleChildScrollView so
+              // the leading block (window controls + train icon) +
+              // destinations + trailing block (connection / theme / logout /
+              // user card) can scroll vertically when the viewport is
+              // shorter than their combined intrinsic height. Without this,
+              // the bottom items get clipped on Flutter Web at 100% zoom on
+              // shorter laptops (~720px), tablets in landscape with the
+              // on-screen keyboard up, etc. The ConstrainedBox + IntrinsicHeight
+              // pair is the canonical pattern: NavigationRail keeps filling
+              // the column when there is enough room, but scrolls when there
+              // isn't.
+              LayoutBuilder(
+                builder: (context, constraints) => SingleChildScrollView(
+                  child: ConstrainedBox(
+                    constraints:
+                        BoxConstraints(minHeight: constraints.maxHeight),
+                    child: IntrinsicHeight(
+                      child: NavigationRail(
+                        extended: useExtendedRail,
+                        minExtendedWidth: 230,
+                        labelType: useExtendedRail
+                            ? null
+                            : NavigationRailLabelType.all,
+                        selectedIndex: _selectedIndex,
+                        onDestinationSelected: (index) {
+                          setState(() {
+                            _selectedIndex = index;
+                          });
+                        },
+                        leading: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (isDesktop)
+                              SizedBox(
+                                height: 40,
+                                child: Directionality(
+                                  textDirection: TextDirection.ltr,
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.end,
+                                    children: [
+                                      IconButton(
+                                        icon: const Icon(Icons.remove,
+                                            size: 18),
+                                        onPressed: () =>
+                                            windowManager.minimize(),
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.crop_square,
+                                            size: 18),
+                                        onPressed: () async {
+                                          if (await windowManager
+                                              .isMaximized()) {
+                                            await windowManager.unmaximize();
+                                          } else {
+                                            await windowManager.maximize();
+                                          }
+                                        },
+                                      ),
+                                      IconButton(
+                                        icon: const Icon(Icons.close,
+                                            size: 18),
+                                        onPressed: () =>
+                                            windowManager.close(),
+                                      ),
+                                    ],
+                                  ),
+                                ),
                               ),
-                              IconButton(
-                                icon: const Icon(Icons.crop_square, size: 18),
-                                onPressed: () async {
-                                  if (await windowManager.isMaximized()) {
-                                    await windowManager.unmaximize();
-                                  } else {
-                                    await windowManager.maximize();
-                                  }
-                                },
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.close, size: 18),
-                                onPressed: () => windowManager.close(),
+                            const SizedBox(height: 16),
+                            Icon(Icons.train,
+                                size: 40, color: scheme.primary),
+                            if (useExtendedRail) ...[
+                              const SizedBox(height: 8),
+                              const Text(
+                                'السكك الحديدية',
+                                style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14),
                               ),
                             ],
-                          ),
+                            const SizedBox(height: 12),
+                            const Divider(),
+                          ],
                         ),
-                      ),
-                    const SizedBox(height: 16),
-                    Icon(Icons.train, size: 40, color: scheme.primary),
-                    if (useExtendedRail) ...[
-                      const SizedBox(height: 8),
-                      const Text(
-                        'السكك الحديدية',
-                        style:
-                            TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                      ),
-                    ],
-                    const SizedBox(height: 12),
-                    const Divider(),
-                  ],
-                ),
-                trailing: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const ConnectionStatusIndicator(),
-                    const Divider(),
-                    IconButton(
-                      icon: const Icon(Icons.settings_outlined),
-                      tooltip: 'إعدادات السيرفر',
-                      onPressed: () =>
-                          Navigator.of(context).pushNamed('/server-settings'),
-                    ),
-                    IconButton(
-                      icon: Icon(
-                        themeProvider.isDarkMode
-                            ? Icons.light_mode_outlined
-                            : Icons.dark_mode_outlined,
-                      ),
-                      onPressed: () => themeProvider.toggleTheme(),
-                    ),
-                    const SizedBox(height: 8),
-                    IconButton(
-                      icon: const Icon(Icons.logout_outlined),
-                      onPressed: () => authProvider.logout(),
-                    ),
-                    const SizedBox(height: 12),
-                    if (useExtendedRail)
-                      SizedBox(
-                        width: 210,
-                        child: ListTile(
-                          dense: true,
-                          contentPadding:
-                              const EdgeInsets.symmetric(horizontal: 8),
-                          leading: CircleAvatar(
-                            backgroundColor: scheme.primary.withValues(alpha: 0.18),
-                            child: Text(
-                              user.fullName.isNotEmpty ? user.fullName[0] : 'U',
+                        trailing: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const ConnectionStatusIndicator(),
+                            const Divider(),
+                            IconButton(
+                              icon: const Icon(Icons.settings_outlined),
+                              tooltip: 'إعدادات السيرفر',
+                              onPressed: () => Navigator.of(context)
+                                  .pushNamed('/server-settings'),
                             ),
-                          ),
-                          title: Text(
-                            user.fullName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          subtitle: Text(
-                            user.role == 'admin' ? 'مدير النظام' : 'مستخدم',
-                            style: const TextStyle(fontSize: 12),
-                          ),
+                            IconButton(
+                              icon: Icon(
+                                themeProvider.isDarkMode
+                                    ? Icons.light_mode_outlined
+                                    : Icons.dark_mode_outlined,
+                              ),
+                              onPressed: () =>
+                                  themeProvider.toggleTheme(),
+                            ),
+                            const SizedBox(height: 8),
+                            IconButton(
+                              icon: const Icon(Icons.logout_outlined),
+                              onPressed: () => authProvider.logout(),
+                            ),
+                            const SizedBox(height: 12),
+                            if (useExtendedRail)
+                              SizedBox(
+                                width: 210,
+                                child: ListTile(
+                                  dense: true,
+                                  contentPadding:
+                                      const EdgeInsets.symmetric(
+                                          horizontal: 8),
+                                  leading: CircleAvatar(
+                                    backgroundColor: scheme.primary
+                                        .withValues(alpha: 0.18),
+                                    child: Text(
+                                      user.fullName.isNotEmpty
+                                          ? user.fullName[0]
+                                          : 'U',
+                                    ),
+                                  ),
+                                  title: Text(
+                                    user.fullName,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  subtitle: Text(
+                                    user.role == 'admin'
+                                        ? 'مدير النظام'
+                                        : 'مستخدم',
+                                    style: const TextStyle(fontSize: 12),
+                                  ),
+                                ),
+                              )
+                            else
+                              CircleAvatar(
+                                backgroundColor: scheme.primary
+                                    .withValues(alpha: 0.18),
+                                child: Text(
+                                  user.fullName.isNotEmpty
+                                      ? user.fullName[0]
+                                      : 'U',
+                                ),
+                              ),
+                            const SizedBox(height: 16),
+                          ],
                         ),
-                      )
-                    else
-                      CircleAvatar(
-                        backgroundColor: scheme.primary.withValues(alpha: 0.18),
-                        child: Text(
-                          user.fullName.isNotEmpty ? user.fullName[0] : 'U',
-                        ),
+                        destinations: [
+                          for (final item in navItems)
+                            NavigationRailDestination(
+                              icon: Icon(item.icon),
+                              selectedIcon:
+                                  Icon(item.icon, color: scheme.primary),
+                              label: Text(item.title),
+                            ),
+                        ],
                       ),
-                    const SizedBox(height: 16),
-                  ],
-                ),
-                destinations: [
-                  for (final item in navItems)
-                    NavigationRailDestination(
-                      icon: Icon(item.icon),
-                      selectedIcon: Icon(item.icon, color: scheme.primary),
-                      label: Text(item.title),
                     ),
-                ],
+                  ),
+                ),
               ),
             Expanded(child: selectedItem.screen),
           ],
