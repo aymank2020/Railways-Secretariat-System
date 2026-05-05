@@ -1,5 +1,8 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math';
+
+import 'rate_limit_store.dart';
 
 /// CORS middleware - sets appropriate headers on every response.
 ///
@@ -112,7 +115,14 @@ class RequestLogger {
 
 /// IP-based rate limiter for specific endpoints (e.g., login).
 ///
-/// Tracks request counts per IP within a sliding window.
+/// Tracks request counts per IP within a sliding window. The in-memory
+/// map is the source of truth on the hot path so [allowRequest] stays
+/// synchronous and allocation-free; an optional [RateLimitStore] mirrors
+/// the same data into SQLite so the counter survives a server restart
+/// (§4.6 of the code review). Persistence is fire-and-forget — a crash
+/// between in-memory accounting and the SQLite write costs the operator
+/// at most a single attempt per affected IP, which is well under the
+/// per-window threshold.
 class RateLimiter {
   final int maxAttempts;
   final Duration window;
@@ -121,10 +131,32 @@ class RateLimiter {
   final Map<String, List<DateTime>> _attempts = {};
   DateTime _lastCleanup = DateTime.now();
 
+  RateLimitStore? _store;
+
   RateLimiter({
     this.maxAttempts = 10,
     this.window = const Duration(minutes: 5),
   });
+
+  /// Attach [store] for durable mirroring of attempt timestamps and
+  /// re-hydrate the in-memory map from the last [window]'s worth of
+  /// rows so a restart cannot reset an in-flight ban. Idempotent —
+  /// calling twice is a no-op on the second call.
+  Future<void> attachStore(RateLimitStore store) async {
+    if (_store != null) return;
+    _store = store;
+
+    final cutoff = DateTime.now().subtract(window);
+    final loaded = await store.loadAttemptsSince(cutoff);
+    for (final entry in loaded.entries) {
+      _attempts
+          .putIfAbsent(entry.key, () => <DateTime>[])
+          .addAll(entry.value);
+    }
+    // Opportunistic cleanup of rows older than the window so the table
+    // doesn't grow unbounded across restarts.
+    await store.purgeBefore(cutoff);
+  }
 
   /// Returns `true` if the request should be allowed, `false` if rate-limited.
   bool allowRequest(String ip) {
@@ -136,6 +168,14 @@ class RateLimiter {
     final attempts = _attempts.putIfAbsent(ip, () => <DateTime>[]);
     attempts.removeWhere((t) => t.isBefore(cutoff));
     attempts.add(now);
+
+    // Mirror the new attempt to SQLite without blocking the response.
+    // We swallow errors deliberately — a transient DB hiccup must not
+    // turn into an HTTP 5xx for a legitimate login.
+    final store = _store;
+    if (store != null) {
+      unawaited(store.recordAttempt(ip, now).catchError((_) {}));
+    }
 
     return attempts.length <= maxAttempts;
   }
@@ -166,6 +206,10 @@ class RateLimiter {
     }
     for (final key in emptyKeys) {
       _attempts.remove(key);
+    }
+    final store = _store;
+    if (store != null) {
+      unawaited(store.purgeBefore(cutoff).catchError((_) => 0));
     }
   }
 }
