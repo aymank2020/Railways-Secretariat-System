@@ -75,10 +75,11 @@ jobs:
           INPUT_LABEL: ${{ inputs.label }}
         run: |
           set -euo pipefail
-          # Route INPUT_LABEL through env: rather than direct ${{ }} expansion
-          # so a malicious workflow_dispatch input can't break out of the
-          # shell context and run arbitrary commands on the runner.  Then
-          # additionally restrict the resulting label to a filename-safe
+          # Route INPUT_LABEL through env: rather than a direct dollar-
+          # double-brace expansion so a malicious workflow_dispatch input
+          # can't break out of the shell context and run arbitrary commands
+          # on the runner.  Then additionally restrict the resulting label
+          # to a filename-safe
           # character set so anything downstream (filenames, zip entries,
           # GitHub Output values that may be re-expanded into shells) is
           # safe regardless of where it is consumed.
@@ -155,9 +156,10 @@ jobs:
         env:
           INPUT_LABEL: ${{ inputs.label }}
         run: |
-          # Route INPUT_LABEL through env: rather than direct ${{ }} expansion
-          # so a malicious workflow_dispatch input can't break out of the
-          # PowerShell context.  Then additionally restrict the resulting
+          # Route INPUT_LABEL through env: rather than a direct dollar-
+          # double-brace expansion so a malicious workflow_dispatch input
+          # can't break out of the PowerShell context.  Then additionally
+          # restrict the resulting
           # label to a filename-safe character set so anything downstream
           # (filenames, zip entries) is safe regardless of where it is
           # consumed.
