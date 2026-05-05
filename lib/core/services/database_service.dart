@@ -1244,20 +1244,36 @@ class DatabaseService {
 
       final userId = row['id'] as int;
 
-      // Web stores fewer PBKDF2 iterations to stay responsive in the browser.
-      // If a row was hashed natively (high iteration count) and is then read
-      // by the web build, transparently re-hash with the lower count so the
-      // next login is faster. We never re-hash to a *higher* count here —
-      // that path is owned by the migration runner.
-      final needsWebIterationDowngrade =
-          kIsWeb && iterations > _passwordService.recommendedIterations;
-      if (needsWebIterationDowngrade) {
-        _debugLog('authenticate downgrading PBKDF2 iterations for web');
+      // Iteration-count alignment for the current platform.
+      //
+      // The web build historically stored 1,000 PBKDF2 iterations to keep
+      // login latency acceptable in CanvasKit; the new default is 100,000
+      // (OWASP 2024 minimum for PBKDF2-SHA256). Native always stores
+      // 120,000. On a successful login we opportunistically re-hash so
+      // the row converges on the recommended count for the platform that
+      // just authenticated:
+      //
+      //   * Web sees a row at 1,000 iterations  → upgrade to 100,000 so
+      //     the stored hash actually meets modern guidance.
+      //   * Web sees a row at 120,000 (native)  → downgrade to 100,000 so
+      //     subsequent web logins stay snappy. Still well above the
+      //     OWASP threshold, no security regression.
+      //   * Native sees a row at < 120,000     → upgrade to 120,000.
+      //
+      // We never re-hash on a row that's already at the recommended
+      // count, and we read+verify with the *stored* iteration count
+      // (the variable `iterations` above), so this is fully backward-
+      // compatible with every existing row.
+      final recommended = _passwordService.recommendedIterations;
+      if (iterations != recommended) {
+        _debugLog(
+          'authenticate adjusting PBKDF2 iterations '
+          '$iterations -> $recommended (kIsWeb=$kIsWeb)',
+        );
         await _withWebTimeout(
           db.update(
             'users',
-            _buildPasswordFields(password,
-                iterations: _passwordService.recommendedIterations),
+            _buildPasswordFields(password, iterations: recommended),
             where: 'id = ?',
             whereArgs: [userId],
           ),

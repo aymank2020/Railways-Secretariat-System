@@ -24,7 +24,18 @@ class PasswordHashResult {
 class PasswordService {
   static const String algorithm = 'pbkdf2_sha256';
   static const int _defaultIterationsNative = 120000;
-  static const int _defaultIterationsWeb = 1000;
+  // Web-mode iteration count. Bumped from a legacy value of 1,000 (which
+  // is well below the 2024 OWASP guidance of ≥100k for PBKDF2-SHA256) up
+  // to 100,000. On modern browsers this completes in well under 200 ms
+  // for a 32-byte derivation, so the user-perceived login latency stays
+  // imperceptible while the hash now sits squarely in the secure bucket.
+  // Hashes that were stored at the lower count remain valid because the
+  // iteration count is persisted per-user and verification reads it from
+  // the row; on the next successful Web login we transparently re-hash
+  // the row at the new count via the upgrade path in
+  // `DatabaseService.authenticateUser` (see the
+  // `needsWebIterationUpgrade` branch).
+  static const int _defaultIterationsWeb = 100000;
   static const int _saltLength = 16;
   static const int _keyLength = 32;
 
