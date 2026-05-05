@@ -1,13 +1,33 @@
 name: Release
 
-# Publishes the Flutter Android APK and Windows desktop bundle as a GitHub
-# Release whenever a `v*` tag is pushed (e.g. `v1.0.6`). End-users can then
-# download the installers from the repository's Releases tab.
+# Builds the Flutter Android APK and Windows desktop bundle as downloadable
+# artefacts, and (for tag builds) publishes them as a GitHub Release.
+#
+# Triggers
+# --------
+# 1) `push` of a `v*` tag (e.g. `v1.0.6`)        — full Release on the Releases tab.
+# 2) `workflow_dispatch` (manual run from the    — artefacts only, no Release.
+#    "Actions" tab on github.com)                  Lets the operator bake a custom
+#                                                  API_BASE_URL into the binary.
 
 on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      api_base_url:
+        description: |
+          API base URL to bake into the binary (e.g. https://railways.tail6243bc.ts.net/).
+          Leave empty to ship a build that prompts the user for the URL on first launch.
+        required: false
+        default: 'https://railways.tail6243bc.ts.net/'
+      label:
+        description: |
+          Suffix used in the artefact filenames (e.g. `prod`, `beta`).
+          Leave empty to fall back to `dev-<short-sha>`.
+        required: false
+        default: ''
 
 permissions:
   contents: write
@@ -39,15 +59,54 @@ jobs:
         run: flutter pub get
 
       - name: Build APK (release)
-        run: flutter build apk --release --dart-define=API_BASE_URL=
+        env:
+          API_BASE_URL: ${{ inputs.api_base_url }}
+        run: |
+          # Trim and forward the URL exactly so a leading/trailing space in the
+          # workflow input doesn't end up baked into the binary.
+          api_base_url="${API_BASE_URL:-}"
+          api_base_url="$(echo -n "$api_base_url" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+          echo "Baking API_BASE_URL='${api_base_url}' into Android APK"
+          flutter build apk --release --dart-define=API_BASE_URL="${api_base_url}"
 
-      - name: Rename APK with tag
-        id: rename_apk
+      - name: Compute artefact label
+        id: label
+        env:
+          INPUT_LABEL: ${{ inputs.label }}
         run: |
           set -euo pipefail
-          tag="${GITHUB_REF_NAME}"
+          # Route INPUT_LABEL through env: rather than direct ${{ }} expansion
+          # so a malicious workflow_dispatch input can't break out of the
+          # shell context and run arbitrary commands on the runner.  Then
+          # additionally restrict the resulting label to a filename-safe
+          # character set so anything downstream (filenames, zip entries,
+          # GitHub Output values that may be re-expanded into shells) is
+          # safe regardless of where it is consumed.
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            raw_label="${GITHUB_REF_NAME}"
+          elif [[ -n "${INPUT_LABEL:-}" ]]; then
+            raw_label="${INPUT_LABEL}"
+          else
+            raw_label="dev-${GITHUB_SHA::7}"
+          fi
+          # Strip everything that isn't a-z A-Z 0-9 . _ - so the label is
+          # safe to embed in filenames / shell commands. Replace runs of
+          # disallowed characters with a single dash, then trim leading /
+          # trailing dashes.
+          label="$(printf '%s' "$raw_label" | tr -c 'A-Za-z0-9._-' '-' | sed -e 's/--*/-/g' -e 's/^-//' -e 's/-$//')"
+          if [[ -z "$label" ]]; then
+            label="dev-${GITHUB_SHA::7}"
+          fi
+          echo "label=${label}" >> "$GITHUB_OUTPUT"
+
+      - name: Rename APK with label
+        id: rename_apk
+        env:
+          ARTEFACT_LABEL: ${{ steps.label.outputs.label }}
+        run: |
+          set -euo pipefail
           src="build/app/outputs/flutter-apk/app-release.apk"
-          dst="build/app/outputs/flutter-apk/Railways-Secretariat-${tag}.apk"
+          dst="build/app/outputs/flutter-apk/Railways-Secretariat-${ARTEFACT_LABEL}.apk"
           mv "$src" "$dst"
           echo "apk_path=$dst" >> "$GITHUB_OUTPUT"
           echo "apk_name=$(basename "$dst")" >> "$GITHUB_OUTPUT"
@@ -57,7 +116,7 @@ jobs:
         with:
           name: android-apk
           path: ${{ steps.rename_apk.outputs.apk_path }}
-          retention-days: 7
+          retention-days: 14
 
   build-windows:
     name: Build Windows desktop
@@ -82,14 +141,36 @@ jobs:
         run: flutter pub get
 
       - name: Build Windows (release)
-        run: flutter build windows --release --dart-define=API_BASE_URL=
+        shell: pwsh
+        env:
+          API_BASE_URL: ${{ inputs.api_base_url }}
+        run: |
+          $apiBaseUrl = "$env:API_BASE_URL".Trim()
+          Write-Host "Baking API_BASE_URL='$apiBaseUrl' into Windows build"
+          flutter build windows --release --dart-define=API_BASE_URL="$apiBaseUrl"
 
       - name: Package Windows build
         id: package_windows
         shell: pwsh
+        env:
+          INPUT_LABEL: ${{ inputs.label }}
         run: |
-          $tag = $env:GITHUB_REF_NAME
-          $zipName = "Railways-Secretariat-$tag-windows-x64.zip"
+          # Route INPUT_LABEL through env: rather than direct ${{ }} expansion
+          # so a malicious workflow_dispatch input can't break out of the
+          # PowerShell context.  Then additionally restrict the resulting
+          # label to a filename-safe character set so anything downstream
+          # (filenames, zip entries) is safe regardless of where it is
+          # consumed.
+          if ("$env:GITHUB_REF" -like "refs/tags/*") {
+            $rawLabel = "$env:GITHUB_REF_NAME"
+          } elseif ("$env:INPUT_LABEL" -ne "") {
+            $rawLabel = "$env:INPUT_LABEL"
+          } else {
+            $rawLabel = "dev-" + $env:GITHUB_SHA.Substring(0,7)
+          }
+          $label = ($rawLabel -replace '[^A-Za-z0-9._-]+', '-').Trim('-')
+          if (-not $label) { $label = "dev-" + $env:GITHUB_SHA.Substring(0,7) }
+          $zipName = "Railways-Secretariat-$label-windows-x64.zip"
           $src = "build/windows/x64/runner/Release"
           if (-not (Test-Path $src)) {
             $src = "build/windows/runner/Release"
@@ -103,12 +184,15 @@ jobs:
         with:
           name: windows-x64
           path: ${{ steps.package_windows.outputs.zip_path }}
-          retention-days: 7
+          retention-days: 14
 
   publish:
     name: Publish GitHub Release
     runs-on: ubuntu-24.04
     needs: [build-android, build-windows]
+    # Only publish when triggered by a tag push.  Manual runs only produce
+    # downloadable artefacts.
+    if: startsWith(github.ref, 'refs/tags/')
     steps:
       - name: Download Android artifact
         uses: actions/download-artifact@v4
