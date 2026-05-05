@@ -71,23 +71,42 @@ jobs:
 
       - name: Compute artefact label
         id: label
+        env:
+          INPUT_LABEL: ${{ inputs.label }}
         run: |
           set -euo pipefail
+          # Route INPUT_LABEL through env: rather than direct ${{ }} expansion
+          # so a malicious workflow_dispatch input can't break out of the
+          # shell context and run arbitrary commands on the runner.  Then
+          # additionally restrict the resulting label to a filename-safe
+          # character set so anything downstream (filenames, zip entries,
+          # GitHub Output values that may be re-expanded into shells) is
+          # safe regardless of where it is consumed.
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
-            label="${GITHUB_REF_NAME}"
-          elif [[ -n "${{ inputs.label }}" ]]; then
-            label="${{ inputs.label }}"
+            raw_label="${GITHUB_REF_NAME}"
+          elif [[ -n "${INPUT_LABEL:-}" ]]; then
+            raw_label="${INPUT_LABEL}"
           else
+            raw_label="dev-${GITHUB_SHA::7}"
+          fi
+          # Strip everything that isn't a-z A-Z 0-9 . _ - so the label is
+          # safe to embed in filenames / shell commands. Replace runs of
+          # disallowed characters with a single dash, then trim leading /
+          # trailing dashes.
+          label="$(printf '%s' "$raw_label" | tr -c 'A-Za-z0-9._-' '-' | sed -e 's/--*/-/g' -e 's/^-//' -e 's/-$//')"
+          if [[ -z "$label" ]]; then
             label="dev-${GITHUB_SHA::7}"
           fi
           echo "label=${label}" >> "$GITHUB_OUTPUT"
 
       - name: Rename APK with label
         id: rename_apk
+        env:
+          ARTEFACT_LABEL: ${{ steps.label.outputs.label }}
         run: |
           set -euo pipefail
           src="build/app/outputs/flutter-apk/app-release.apk"
-          dst="build/app/outputs/flutter-apk/Railways-Secretariat-${{ steps.label.outputs.label }}.apk"
+          dst="build/app/outputs/flutter-apk/Railways-Secretariat-${ARTEFACT_LABEL}.apk"
           mv "$src" "$dst"
           echo "apk_path=$dst" >> "$GITHUB_OUTPUT"
           echo "apk_name=$(basename "$dst")" >> "$GITHUB_OUTPUT"
@@ -133,14 +152,24 @@ jobs:
       - name: Package Windows build
         id: package_windows
         shell: pwsh
+        env:
+          INPUT_LABEL: ${{ inputs.label }}
         run: |
+          # Route INPUT_LABEL through env: rather than direct ${{ }} expansion
+          # so a malicious workflow_dispatch input can't break out of the
+          # PowerShell context.  Then additionally restrict the resulting
+          # label to a filename-safe character set so anything downstream
+          # (filenames, zip entries) is safe regardless of where it is
+          # consumed.
           if ("$env:GITHUB_REF" -like "refs/tags/*") {
-            $label = "$env:GITHUB_REF_NAME"
-          } elseif ("${{ inputs.label }}" -ne "") {
-            $label = "${{ inputs.label }}"
+            $rawLabel = "$env:GITHUB_REF_NAME"
+          } elseif ("$env:INPUT_LABEL" -ne "") {
+            $rawLabel = "$env:INPUT_LABEL"
           } else {
-            $label = "dev-" + $env:GITHUB_SHA.Substring(0,7)
+            $rawLabel = "dev-" + $env:GITHUB_SHA.Substring(0,7)
           }
+          $label = ($rawLabel -replace '[^A-Za-z0-9._-]+', '-').Trim('-')
+          if (-not $label) { $label = "dev-" + $env:GITHUB_SHA.Substring(0,7) }
           $zipName = "Railways-Secretariat-$label-windows-x64.zip"
           $src = "build/windows/x64/runner/Release"
           if (-not (Test-Path $src)) {
