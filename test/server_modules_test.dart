@@ -5,6 +5,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:railway_secretariat/server/helpers.dart';
 import 'package:railway_secretariat/server/middleware.dart';
+import 'package:railway_secretariat/server/rate_limit_store.dart';
 import 'package:railway_secretariat/server/session_store.dart';
 
 void main() {
@@ -414,6 +415,155 @@ void main() {
     test('retryAfterSeconds returns 0 for unknown IP', () {
       final limiter = RateLimiter(maxAttempts: 5, window: const Duration(minutes: 5));
       expect(limiter.retryAfterSeconds('unknown'), 0);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // RateLimitStore (§4.6 — persistence across restart)
+  //
+  // Each test uses a fresh in-memory database so the store starts empty;
+  // the assertions cover the wire-up that turns a process-local map into
+  // a restart-resistant counter.
+  // ---------------------------------------------------------------------------
+
+  group('RateLimitStore', () {
+    late Database db;
+    late RateLimitStore store;
+
+    setUp(() async {
+      db = await databaseFactoryFfi.openDatabase(
+        inMemoryDatabasePath,
+        options: OpenDatabaseOptions(version: 1),
+      );
+      store = await RateLimitStore.open(db);
+    });
+
+    tearDown(() async {
+      await db.close();
+    });
+
+    test('open creates the rate_limit_attempts table and indexes', () async {
+      final tables = await db.rawQuery(
+        "SELECT name FROM sqlite_master "
+        "WHERE type='table' AND name='rate_limit_attempts'",
+      );
+      expect(tables.length, 1);
+
+      final indexes = await db.rawQuery(
+        "SELECT name FROM sqlite_master "
+        "WHERE type='index' AND tbl_name='rate_limit_attempts' "
+        "ORDER BY name",
+      );
+      final indexNames = indexes.map((r) => r['name'] as String).toList();
+      expect(indexNames, contains('idx_rate_limit_attempts_ip_time'));
+      expect(indexNames, contains('idx_rate_limit_attempts_time'));
+    });
+
+    test('recordAttempt + loadAttemptsSince round-trips per-IP timestamps',
+        () async {
+      final t0 = DateTime.utc(2026, 5, 4, 18);
+      await store.recordAttempt('1.1.1.1', t0);
+      await store.recordAttempt('1.1.1.1', t0.add(const Duration(seconds: 1)));
+      await store.recordAttempt('2.2.2.2', t0.add(const Duration(seconds: 2)));
+
+      final loaded =
+          await store.loadAttemptsSince(t0.subtract(const Duration(hours: 1)));
+      expect(loaded.keys.toSet(), {'1.1.1.1', '2.2.2.2'});
+      expect(loaded['1.1.1.1']!.length, 2);
+      expect(loaded['2.2.2.2']!.length, 1);
+      // Each list is returned in chronological order.
+      expect(loaded['1.1.1.1']!.first.isBefore(loaded['1.1.1.1']!.last), isTrue);
+    });
+
+    test('loadAttemptsSince filters out attempts older than the cutoff',
+        () async {
+      final now = DateTime.utc(2026, 5, 4, 18);
+      await store.recordAttempt('1.1.1.1', now.subtract(const Duration(hours: 2)));
+      await store.recordAttempt('1.1.1.1', now.subtract(const Duration(minutes: 1)));
+
+      final loaded =
+          await store.loadAttemptsSince(now.subtract(const Duration(minutes: 10)));
+      expect(loaded.keys, contains('1.1.1.1'));
+      expect(loaded['1.1.1.1']!.length, 1,
+          reason: 'only the recent attempt should survive the cutoff');
+    });
+
+    test('purgeBefore deletes only rows older than the cutoff', () async {
+      final now = DateTime.utc(2026, 5, 4, 18);
+      await store.recordAttempt(
+          'old', now.subtract(const Duration(hours: 24)));
+      await store.recordAttempt(
+          'new', now.subtract(const Duration(seconds: 5)));
+
+      final removed =
+          await store.purgeBefore(now.subtract(const Duration(hours: 1)));
+      expect(removed, 1);
+
+      final remaining = await db.query('rate_limit_attempts');
+      expect(remaining.length, 1);
+      expect(remaining.first['ip'], 'new');
+    });
+  });
+
+  group('RateLimiter persistence (§4.6)', () {
+    late Database db;
+
+    setUp(() async {
+      db = await databaseFactoryFfi.openDatabase(
+        inMemoryDatabasePath,
+        options: OpenDatabaseOptions(version: 1),
+      );
+    });
+
+    tearDown(() async {
+      await db.close();
+    });
+
+    test('attachStore re-hydrates the in-memory tracker from SQLite',
+        () async {
+      // Phase 1 — first "process": attach a store, exhaust the bucket.
+      final firstStore = await RateLimitStore.open(db);
+      final firstLimiter = RateLimiter(
+        maxAttempts: 2,
+        window: const Duration(minutes: 5),
+      );
+      await firstLimiter.attachStore(firstStore);
+
+      expect(firstLimiter.allowRequest('1.2.3.4'), isTrue);
+      expect(firstLimiter.allowRequest('1.2.3.4'), isTrue);
+      expect(firstLimiter.allowRequest('1.2.3.4'), isFalse,
+          reason: '3rd attempt is over the limit');
+
+      // Wait long enough for the fire-and-forget store.recordAttempt
+      // futures to flush before we tear down.
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+
+      // Phase 2 — simulate a restart by building a brand-new limiter
+      // against the SAME database. The pre-existing rows must
+      // re-populate the counter so the offending IP is still blocked.
+      final secondStore = await RateLimitStore.open(db);
+      final secondLimiter = RateLimiter(
+        maxAttempts: 2,
+        window: const Duration(minutes: 5),
+      );
+      await secondLimiter.attachStore(secondStore);
+
+      expect(secondLimiter.allowRequest('1.2.3.4'), isFalse,
+          reason: 'restart must not reset the counter');
+    });
+
+    test('attachStore is idempotent on the same RateLimiter instance',
+        () async {
+      final store = await RateLimitStore.open(db);
+      final limiter = RateLimiter(
+        maxAttempts: 1,
+        window: const Duration(minutes: 5),
+      );
+      await limiter.attachStore(store);
+      // Second call must not throw, must not corrupt internal state.
+      await limiter.attachStore(store);
+      expect(limiter.allowRequest('5.5.5.5'), isTrue);
+      expect(limiter.allowRequest('5.5.5.5'), isFalse);
     });
   });
 

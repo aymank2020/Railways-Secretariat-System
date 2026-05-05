@@ -21,6 +21,7 @@ import 'package:railway_secretariat/features/users/data/repositories/database_us
 
 import 'package:railway_secretariat/server/helpers.dart';
 import 'package:railway_secretariat/server/middleware.dart';
+import 'package:railway_secretariat/server/rate_limit_store.dart';
 import 'package:railway_secretariat/server/session_store.dart';
 
 final Stopwatch _serverUptime = Stopwatch();
@@ -105,6 +106,12 @@ Future<void> main() async {
   // Session store with SQLite persistence.
   final sessionStore = SessionStore();
   await sessionStore.initialize(db);
+
+  // Mirror login attempts to SQLite so the in-memory counter survives
+  // a server restart (§4.6). The in-memory map is still authoritative
+  // on the hot path; persistence is fire-and-forget.
+  final rateLimitStore = await RateLimitStore.open(db);
+  await loginRateLimiter.attachStore(rateLimitStore);
 
   // Read-only audit: shout if any seeded account is still using its
   // well-known default password. This typically happens after a data-volume

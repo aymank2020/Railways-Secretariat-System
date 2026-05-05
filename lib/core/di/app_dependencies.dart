@@ -5,7 +5,7 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:railway_secretariat/core/network/api_client.dart';
 import 'package:railway_secretariat/features/auth/data/repositories/database_auth_repository.dart';
 import 'package:railway_secretariat/features/auth/data/repositories/http_auth_repository.dart';
-import 'package:railway_secretariat/features/auth/data/repositories/encrypted_credentials_repository.dart';
+import 'package:railway_secretariat/features/auth/data/repositories/secure_storage_credentials_repository.dart';
 import 'package:railway_secretariat/features/auth/domain/usecases/auth_use_cases.dart';
 import 'package:railway_secretariat/features/documents/data/datasources/excel_import_service.dart';
 import 'package:railway_secretariat/features/documents/data/repositories/database_document_repository.dart';
@@ -40,7 +40,12 @@ class AppDependencies {
         isRemoteMode = _resolveApiBaseUrl(overrideApiBaseUrl) != null {
     final dbService = DatabaseService();
     final excelImportService = ExcelImportService();
-    final credentialsRepository = EncryptedCredentialsRepository();
+    // Use OS-keychain-backed storage for the saved username/password
+    // pair (Keychain / Keystore / DPAPI / libsecret / IndexedDB-AES).
+    // The repository transparently migrates any value left behind by
+    // the legacy XOR-cipher [EncryptedCredentialsRepository] on first
+    // read, so existing users do not get logged out by the upgrade.
+    final credentialsRepository = SecureStorageCredentialsRepository();
 
     final remoteBaseUrl = apiBaseUrl;
     if (remoteBaseUrl != null && remoteBaseUrl.trim().isNotEmpty) {

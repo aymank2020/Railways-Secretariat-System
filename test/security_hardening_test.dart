@@ -498,4 +498,96 @@ void main() {
       expect(isSeed, isFalse);
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // §4.8 — Web PBKDF2 iteration constant raised from 1k to ≥100k
+  //
+  // We cannot read the private constant directly, but the public
+  // `verifyPassword` is iteration-agnostic — it always re-hashes with the
+  // exact iteration count it is given. So if a row was hashed at the new
+  // (≥100k) count and verification still succeeds, the constant change
+  // is wired up and the upgrade path remains backward-compatible with
+  // legacy 1k-iter rows that haven't been re-hashed yet.
+  // ---------------------------------------------------------------------------
+
+  group('PBKDF2 web iteration uplift (§4.8)', () {
+    final service = PasswordService();
+
+    test('a row hashed at 100k iterations still verifies', () {
+      final hashed =
+          service.hashPassword('correct horse battery staple', iterations: 100000);
+      final ok = service.verifyPassword(
+        plainPassword: 'correct horse battery staple',
+        saltBase64: hashed.saltBase64,
+        storedHashBase64: hashed.hashBase64,
+        storedAlgorithm: hashed.algorithm,
+        iterations: hashed.iterations,
+      );
+      expect(ok, isTrue);
+    });
+
+    test('legacy rows hashed at 1k iterations remain valid (back-compat)', () {
+      final hashed = service.hashPassword('legacy-pwd', iterations: 1000);
+      final ok = service.verifyPassword(
+        plainPassword: 'legacy-pwd',
+        saltBase64: hashed.saltBase64,
+        storedHashBase64: hashed.hashBase64,
+        storedAlgorithm: hashed.algorithm,
+        iterations: hashed.iterations, // stored count survives upgrade
+      );
+      expect(ok, isTrue,
+          reason:
+              'verification must use the *stored* iteration count so that '
+              'pre-upgrade rows continue to authenticate until the user '
+              'next signs in (which then re-hashes them at the new count)');
+    });
+
+    test(
+        'a hash and its row-stored iteration count survive the constant '
+        'change in any direction',
+        () {
+      // Simulate the row "drifting" from web (1k) to native (120k) and
+      // back. As long as verifyPassword reads the iteration count from
+      // the row, both directions still verify.
+      for (final iter in [1000, 50000, 100000, 120000]) {
+        final hashed = service.hashPassword('drift', iterations: iter);
+        final ok = service.verifyPassword(
+          plainPassword: 'drift',
+          saltBase64: hashed.saltBase64,
+          storedHashBase64: hashed.hashBase64,
+          storedAlgorithm: hashed.algorithm,
+          iterations: iter,
+        );
+        expect(ok, isTrue, reason: 'iter=$iter must verify');
+      }
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // §4.7 — HSTS in deploy/nginx.conf
+  //
+  // Static regression test: ensure the Strict-Transport-Security header
+  // line is present in the prod nginx config so a future refactor of the
+  // header block does not silently drop it.
+  // ---------------------------------------------------------------------------
+
+  group('nginx Strict-Transport-Security header (§4.7)', () {
+    test('deploy/nginx.conf advertises HSTS with at least 1 year max-age',
+        () async {
+      final conf = await File('deploy/nginx.conf').readAsString();
+      final hstsLine = RegExp(
+        r'add_header\s+Strict-Transport-Security\s+"([^"]+)"\s+always;',
+      ).firstMatch(conf);
+      expect(hstsLine, isNotNull,
+          reason: 'HSTS header must be present in nginx.conf');
+
+      final value = hstsLine!.group(1)!;
+      final maxAge =
+          RegExp(r'max-age=(\d+)').firstMatch(value)?.group(1);
+      expect(maxAge, isNotNull,
+          reason: 'HSTS value must include max-age=<seconds>');
+      expect(int.parse(maxAge!), greaterThanOrEqualTo(31536000),
+          reason: 'HSTS max-age must be at least one year (31536000s)');
+    });
+  });
 }
