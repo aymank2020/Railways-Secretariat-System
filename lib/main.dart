@@ -57,19 +57,21 @@ void main() async {
     });
   }
 
-  // Check if there is already a compile-time or env-based API URL.
-  // If so, skip the server settings screen and go straight to the app.
-  final compileTimeUrl = _resolveCompileTimeApiUrl();
-  if (compileTimeUrl != null) {
-    final dependencies = AppDependencies(overrideApiBaseUrl: compileTimeUrl);
+  // SharedPreferences wins over the compile-time URL so end-users who change
+  // the server address from the Settings screen aren't permanently locked
+  // to whatever URL was baked into the binary at build time.  The
+  // compile-time URL is then used as a sensible default on first launch
+  // (or after the user clears the saved URL).
+  final savedUrl = await ServerSettingsService().getSavedServerUrl();
+  if (savedUrl != null && savedUrl.isNotEmpty) {
+    final dependencies = AppDependencies(overrideApiBaseUrl: savedUrl);
     runApp(MyApp(dependencies: dependencies));
     return;
   }
 
-  // Check SharedPreferences for a previously saved server URL.
-  final savedUrl = await ServerSettingsService().getSavedServerUrl();
-  if (savedUrl != null && savedUrl.isNotEmpty) {
-    final dependencies = AppDependencies(overrideApiBaseUrl: savedUrl);
+  final compileTimeUrl = _resolveCompileTimeApiUrl();
+  if (compileTimeUrl != null) {
+    final dependencies = AppDependencies(overrideApiBaseUrl: compileTimeUrl);
     runApp(MyApp(dependencies: dependencies));
     return;
   }
