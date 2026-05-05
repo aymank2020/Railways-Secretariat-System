@@ -25,17 +25,23 @@ void setCorsHeaders(
   if (allowedOrigins != null && allowedOrigins.isNotEmpty) {
     if (allowedOrigins.contains('*')) {
       response.headers.set('Access-Control-Allow-Origin', '*');
-    } else if (requestOrigin != null && requestOrigin.isNotEmpty) {
-      // Trim incoming origin and case-fold the scheme/host portion to match
-      // browser-emitted values (browsers always send lower-case scheme+host).
-      final normalised = requestOrigin.trim();
-      final hit = allowedOrigins.firstWhere(
-        (o) => o.trim() == normalised,
-        orElse: () => '',
-      );
-      if (hit.isNotEmpty) {
-        response.headers.set('Access-Control-Allow-Origin', hit);
-        response.headers.set('Vary', 'Origin');
+    } else {
+      // The chosen Access-Control-Allow-Origin value depends on the
+      // request's Origin header, so `Vary: Origin` MUST be advertised on
+      // every response — even on a non-match or when no Origin header was
+      // sent. Otherwise an upstream caching proxy could serve a cached
+      // response from origin A (no ACAO header) to a later request from
+      // origin B (which IS in the allow-list), silently breaking CORS.
+      response.headers.set('Vary', 'Origin');
+      if (requestOrigin != null && requestOrigin.isNotEmpty) {
+        final normalised = requestOrigin.trim();
+        final hit = allowedOrigins.firstWhere(
+          (o) => o.trim() == normalised,
+          orElse: () => '',
+        );
+        if (hit.isNotEmpty) {
+          response.headers.set('Access-Control-Allow-Origin', hit);
+        }
       }
     }
   }

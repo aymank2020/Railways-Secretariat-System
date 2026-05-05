@@ -298,6 +298,39 @@ void main() {
       // Cross-origin request from an un-listed origin: no Allow-Origin
       // header is emitted, so the browser will refuse the response.
       expect(resp.headers.value('access-control-allow-origin'), isNull);
+      // …but Vary: Origin MUST still be present so any caching proxy
+      // refuses to reuse this response for a request from a *listed*
+      // origin (otherwise the cached "no-CORS" body would silently break
+      // a legitimate cross-origin client).
+      expect(resp.headers.value('vary'), contains('Origin'));
+    });
+
+    test(
+        'sets Vary: Origin even when the request has no Origin header',
+        () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() async => server.close(force: true));
+
+      server.listen((req) {
+        setCorsHeaders(
+          req.response,
+          allowedOrigins: const ['https://example.test'],
+          requestOrigin: req.headers.value('Origin'),
+        );
+        req.response.statusCode = HttpStatus.ok;
+        req.response.close();
+      });
+
+      final client = HttpClient();
+      final resp = await (await client
+              .getUrl(Uri.parse('http://127.0.0.1:${server.port}/')))
+          .close();
+      client.close(force: true);
+
+      // Same-origin / no-Origin request: still no ACAO header, but the
+      // server's response varies by Origin so caches must be told.
+      expect(resp.headers.value('access-control-allow-origin'), isNull);
+      expect(resp.headers.value('vary'), contains('Origin'));
     });
 
     test(
