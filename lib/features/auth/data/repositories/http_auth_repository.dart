@@ -44,13 +44,18 @@ class HttpAuthRepository implements AuthRepository {
   Future<void> updatePassword({
     required int userId,
     required String newPassword,
+    String? oldPassword,
   }) async {
+    final body = <String, dynamic>{
+      'userId': userId,
+      'newPassword': newPassword,
+    };
+    if (oldPassword != null) {
+      body['oldPassword'] = oldPassword;
+    }
     await _apiClient.postMap(
       '/api/auth/change-password',
-      body: <String, dynamic>{
-        'userId': userId,
-        'newPassword': newPassword,
-      },
+      body: body,
     );
   }
 

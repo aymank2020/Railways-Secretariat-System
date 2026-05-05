@@ -242,7 +242,8 @@ void main() {
       );
     });
 
-    test('sets Access-Control-Allow-Origin when an explicit origin is passed',
+    test(
+        'echoes a matching request Origin when listed in the allow-list',
         () async {
       final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       addTearDown(() async => server.close(force: true));
@@ -251,6 +252,70 @@ void main() {
         setCorsHeaders(
           req.response,
           allowedOrigins: const ['https://example.test'],
+          requestOrigin: req.headers.value('Origin'),
+        );
+        req.response.statusCode = HttpStatus.ok;
+        req.response.close();
+      });
+
+      final client = HttpClient();
+      final req = await client
+          .getUrl(Uri.parse('http://127.0.0.1:${server.port}/'));
+      req.headers.set('Origin', 'https://example.test');
+      final resp = await req.close();
+      client.close(force: true);
+
+      expect(
+        resp.headers.value('access-control-allow-origin'),
+        'https://example.test',
+      );
+      expect(resp.headers.value('vary'), contains('Origin'));
+    });
+
+    test(
+        'does NOT echo a request Origin that is not in the allow-list',
+        () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() async => server.close(force: true));
+
+      server.listen((req) {
+        setCorsHeaders(
+          req.response,
+          allowedOrigins: const ['https://example.test'],
+          requestOrigin: req.headers.value('Origin'),
+        );
+        req.response.statusCode = HttpStatus.ok;
+        req.response.close();
+      });
+
+      final client = HttpClient();
+      final req = await client
+          .getUrl(Uri.parse('http://127.0.0.1:${server.port}/'));
+      req.headers.set('Origin', 'https://evil.example');
+      final resp = await req.close();
+      client.close(force: true);
+
+      // Cross-origin request from an un-listed origin: no Allow-Origin
+      // header is emitted, so the browser will refuse the response.
+      expect(resp.headers.value('access-control-allow-origin'), isNull);
+      // …but Vary: Origin MUST still be present so any caching proxy
+      // refuses to reuse this response for a request from a *listed*
+      // origin (otherwise the cached "no-CORS" body would silently break
+      // a legitimate cross-origin client).
+      expect(resp.headers.value('vary'), contains('Origin'));
+    });
+
+    test(
+        'sets Vary: Origin even when the request has no Origin header',
+        () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() async => server.close(force: true));
+
+      server.listen((req) {
+        setCorsHeaders(
+          req.response,
+          allowedOrigins: const ['https://example.test'],
+          requestOrigin: req.headers.value('Origin'),
         );
         req.response.statusCode = HttpStatus.ok;
         req.response.close();
@@ -262,11 +327,35 @@ void main() {
           .close();
       client.close(force: true);
 
-      expect(
-        resp.headers.value('access-control-allow-origin'),
-        'https://example.test',
-      );
+      // Same-origin / no-Origin request: still no ACAO header, but the
+      // server's response varies by Origin so caches must be told.
+      expect(resp.headers.value('access-control-allow-origin'), isNull);
       expect(resp.headers.value('vary'), contains('Origin'));
+    });
+
+    test(
+        'echoes the wildcard when the allow-list is exactly ["*"]',
+        () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      addTearDown(() async => server.close(force: true));
+
+      server.listen((req) {
+        setCorsHeaders(
+          req.response,
+          allowedOrigins: const ['*'],
+          requestOrigin: req.headers.value('Origin'),
+        );
+        req.response.statusCode = HttpStatus.ok;
+        req.response.close();
+      });
+
+      final client = HttpClient();
+      final resp = await (await client
+              .getUrl(Uri.parse('http://127.0.0.1:${server.port}/')))
+          .close();
+      client.close(force: true);
+
+      expect(resp.headers.value('access-control-allow-origin'), '*');
     });
   });
 

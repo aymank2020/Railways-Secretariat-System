@@ -21,7 +21,13 @@ class DatabaseAuthRepository implements AuthRepository {
   Future<void> updatePassword({
     required int userId,
     required String newPassword,
+    String? oldPassword,
   }) async {
+    // [oldPassword] is intentionally ignored here — local-only deployments
+    // are single-user, and [AuthUseCases.changePassword] already verifies
+    // the old password against the live DB before this call. The parameter
+    // exists on the interface for the remote (HTTP) implementation, where
+    // the server enforces the same check.
     await _databaseService.updateUserPassword(userId, newPassword);
   }
 

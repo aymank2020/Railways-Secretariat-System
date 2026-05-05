@@ -6,9 +6,18 @@ abstract class AuthRepository {
     required String password,
   });
 
+  /// Updates a user's password.
+  ///
+  /// [oldPassword] is required for self-change (i.e. the caller is changing
+  /// their own password) so that a stolen session token cannot rotate the
+  /// password without knowing the current one. Pass `null` only for an
+  /// admin reset of someone else's password — the server enforces that the
+  /// caller is an admin AND the target user differs from the caller in
+  /// that case.
   Future<void> updatePassword({
     required int userId,
     required String newPassword,
+    String? oldPassword,
   });
 
   /// Refreshes the current authenticated session, extending its TTL.

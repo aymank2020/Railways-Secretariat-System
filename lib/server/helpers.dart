@@ -312,11 +312,28 @@ String extractToken(HttpRequest request) {
 }
 
 /// Get the client IP address from the request.
+///
+/// Trust order:
+///   1. `X-Real-IP` — set by our nginx (`proxy_set_header X-Real-IP $remote_addr`)
+///      from the actual TCP peer; the client cannot influence it because nginx
+///      always overwrites the header before forwarding.
+///   2. The **last** entry of `X-Forwarded-For` — nginx uses
+///      `$proxy_add_x_forwarded_for` which *appends* the real client IP to
+///      whatever the client sent, so the last comma-separated entry is the
+///      one nginx added and is therefore trustworthy. Reading the **first**
+///      entry would let any attacker spoof their IP by sending
+///      `X-Forwarded-For: 1.2.3.4` and bypass the login rate-limiter.
+///   3. The TCP peer's address — used when the server is reached directly
+///      (e.g. local development without nginx in front).
 String getClientIp(HttpRequest request) {
-  // Check for forwarded headers first (reverse proxy).
+  final realIp = request.headers.value('X-Real-IP');
+  if (realIp != null && realIp.trim().isNotEmpty) {
+    return realIp.trim();
+  }
   final forwarded = request.headers.value('X-Forwarded-For');
   if (forwarded != null && forwarded.trim().isNotEmpty) {
-    return forwarded.split(',').first.trim();
+    final parts = forwarded.split(',');
+    return parts.last.trim();
   }
   return request.connectionInfo?.remoteAddress.address ?? 'unknown';
 }

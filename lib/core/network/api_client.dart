@@ -115,12 +115,20 @@ class ApiClient {
   }
 
   /// Execute [action] with retry + timeout + 401 re-auth.
+  ///
+  /// Set [retryOnTransientErrors] to `false` for non-idempotent verbs
+  /// (POST/PUT/DELETE) so a request that the server already processed but
+  /// whose response was lost on the network is *not* retried. The 401
+  /// re-auth path always runs (it replays the request exactly once after a
+  /// fresh login); only the transient-error retry loop is suppressed.
   Future<http.Response> _executeWithRetry(
-    Future<http.Response> Function() action,
-  ) async {
+    Future<http.Response> Function() action, {
+    bool retryOnTransientErrors = true,
+  }) async {
     Object? lastError;
+    final maxAttempts = retryOnTransientErrors ? maxRetries : 0;
 
-    for (var attempt = 0; attempt <= maxRetries; attempt++) {
+    for (var attempt = 0; attempt <= maxAttempts; attempt++) {
       try {
         final response = await action().timeout(requestTimeout);
 
@@ -144,9 +152,12 @@ class ApiClient {
           }
         }
 
-        // Retry on transient server errors.
-        if (_isTransientStatusCode(response.statusCode) &&
-            attempt < maxRetries) {
+        // Retry on transient server errors. Disabled for mutating verbs
+        // because a successful POST whose response was dropped would be
+        // re-played and produce a duplicate row / audit-log entry.
+        if (retryOnTransientErrors &&
+            _isTransientStatusCode(response.statusCode) &&
+            attempt < maxAttempts) {
           lastError = _buildException(response);
           await _backoff(attempt);
           continue;
@@ -155,7 +166,9 @@ class ApiClient {
         return response;
       } catch (e) {
         lastError = e;
-        if (!_isTransient(e) || attempt >= maxRetries) {
+        if (!retryOnTransientErrors ||
+            !_isTransient(e) ||
+            attempt >= maxAttempts) {
           rethrow;
         }
         await _backoff(attempt);
@@ -235,6 +248,7 @@ class ApiClient {
         headers: _headers(),
         body: body == null ? null : jsonEncode(body),
       ),
+      retryOnTransientErrors: false,
     );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw _buildException(response);
@@ -262,6 +276,7 @@ class ApiClient {
         headers: _headers(),
         body: body == null ? null : jsonEncode(body),
       ),
+      retryOnTransientErrors: false,
     );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw _buildException(response);
@@ -285,6 +300,7 @@ class ApiClient {
         _buildUri(path),
         headers: _headers(withJson: false),
       ),
+      retryOnTransientErrors: false,
     );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw _buildException(response);

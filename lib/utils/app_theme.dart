@@ -72,18 +72,28 @@ class AppTheme {
       navigationRailTheme: NavigationRailThemeData(
         backgroundColor:
             isDark ? _darkSurface.withValues(alpha: 0.95) : _lightSurface,
+        // Wider rail so multi-word Arabic labels ("الوارد", "الصادر",
+        // "إعدادات") fit on a single line under the icon at 100% browser
+        // zoom; the previous default of 72 clipped them.
+        minWidth: 88,
         selectedIconTheme: IconThemeData(color: scheme.primary),
         unselectedIconTheme: IconThemeData(
           color: isDark ? Colors.white70 : Colors.black87,
         ),
+        // Explicit fontFamily on every label TextStyle so the rail cannot
+        // silently fall through to a different font (e.g. the default
+        // Roboto, which Flutter Web tries to fetch from fonts.gstatic.com
+        // and which the CSP then blocks, leaving labels invisible).
         selectedLabelTextStyle: TextStyle(
+          fontFamily: 'NotoSansArabic',
           color: scheme.primary,
-          fontSize: 13,
+          fontSize: 12,
           fontWeight: FontWeight.w700,
         ),
         unselectedLabelTextStyle: TextStyle(
+          fontFamily: 'NotoSansArabic',
           color: isDark ? Colors.white70 : Colors.black87,
-          fontSize: 13,
+          fontSize: 12,
           fontWeight: FontWeight.w500,
         ),
       ),

@@ -103,6 +103,7 @@ class AuthUseCases {
     await _authRepository.updatePassword(
       userId: userId,
       newPassword: newPassword,
+      oldPassword: oldPassword,
     );
     return true;
   }

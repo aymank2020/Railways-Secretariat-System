@@ -156,6 +156,83 @@ void main() {
     });
   });
 
+  // ---------------------------------------------------------------------------
+  // helpers - getClientIp (rate-limit bypass prevention)
+  //
+  // nginx is configured with `proxy_set_header X-Real-IP $remote_addr;` and
+  // `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;`. The
+  // latter APPENDS the real client IP to whatever the client sent, so the
+  // first entry is attacker-controllable. The login rate-limiter MUST key
+  // off a trustworthy value; otherwise an attacker can rotate the spoofed
+  // IP on every attempt and fully bypass the lockout.
+  // ---------------------------------------------------------------------------
+
+  group('helpers - getClientIp', () {
+    Future<String> roundTrip({Map<String, String> headers = const {}}) async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final completer = <String>[];
+      server.listen((req) {
+        completer.add(getClientIp(req));
+        req.response.statusCode = HttpStatus.ok;
+        req.response.close();
+      });
+
+      try {
+        final client = HttpClient();
+        final hreq = await client
+            .getUrl(Uri.parse('http://127.0.0.1:${server.port}/'));
+        headers.forEach(hreq.headers.set);
+        final resp = await hreq.close();
+        await resp.drain<void>();
+        client.close(force: true);
+      } finally {
+        await server.close(force: true);
+      }
+      return completer.first;
+    }
+
+    test('falls back to the TCP peer when no proxy headers are present',
+        () async {
+      final ip = await roundTrip();
+      // Loopback can come back as 127.0.0.1 or ::1 depending on dual-stack.
+      expect(ip, anyOf('127.0.0.1', '::1'));
+    });
+
+    test('prefers X-Real-IP over X-Forwarded-For', () async {
+      final ip = await roundTrip(headers: {
+        'X-Real-IP': '10.0.0.42',
+        'X-Forwarded-For': '1.2.3.4, 10.0.0.42',
+      });
+      expect(ip, '10.0.0.42');
+    });
+
+    test(
+        'reads the LAST X-Forwarded-For entry so a spoofed prefix cannot bypass '
+        'the rate-limiter', () async {
+      // Simulates: attacker sends `X-Forwarded-For: 9.9.9.9`; nginx appends
+      // the real peer (10.0.0.7) to produce `9.9.9.9, 10.0.0.7`. We must
+      // key off `10.0.0.7`, not `9.9.9.9`.
+      final ip = await roundTrip(headers: {
+        'X-Forwarded-For': '9.9.9.9, 10.0.0.7',
+      });
+      expect(ip, '10.0.0.7');
+    });
+
+    test('handles X-Forwarded-For with extra whitespace', () async {
+      final ip = await roundTrip(headers: {
+        'X-Forwarded-For': '  9.9.9.9 ,   10.0.0.7   ',
+      });
+      expect(ip, '10.0.0.7');
+    });
+
+    test('a single-entry X-Forwarded-For is used as-is', () async {
+      final ip = await roundTrip(headers: {
+        'X-Forwarded-For': '10.0.0.55',
+      });
+      expect(ip, '10.0.0.55');
+    });
+  });
+
   group('helpers - permission checks', () {
     test('requireUsersPermission passes for admin', () {
       final session = ServerSession(
@@ -596,6 +673,101 @@ void main() {
       expect(session, isNotNull);
       expect(session!.userId, 7);
       expect(session.username, 'persistent');
+    });
+
+    test(
+        'removeAllSessionsForUser revokes every session except exceptToken',
+        () async {
+      // Three sessions for user 5 (different devices) + one for user 6.
+      final tokenA = await store.createSession(
+        userId: 5,
+        username: 'alice',
+        role: 'user',
+        canManageUsers: false,
+        canManageWarid: true,
+        canManageSadir: true,
+        canImportExcel: false,
+      );
+      final tokenB = await store.createSession(
+        userId: 5,
+        username: 'alice',
+        role: 'user',
+        canManageUsers: false,
+        canManageWarid: true,
+        canManageSadir: true,
+        canImportExcel: false,
+      );
+      final tokenC = await store.createSession(
+        userId: 5,
+        username: 'alice',
+        role: 'user',
+        canManageUsers: false,
+        canManageWarid: true,
+        canManageSadir: true,
+        canImportExcel: false,
+      );
+      final tokenOther = await store.createSession(
+        userId: 6,
+        username: 'bob',
+        role: 'user',
+        canManageUsers: false,
+        canManageWarid: true,
+        canManageSadir: true,
+        canImportExcel: false,
+      );
+
+      // Rotate alice's password while logged in on tokenB; the others must
+      // be revoked but tokenB and bob's session must survive.
+      final removedCount =
+          await store.removeAllSessionsForUser(5, exceptToken: tokenB);
+      expect(removedCount, 2);
+
+      expect(store.find(tokenA), isNull);
+      expect(store.find(tokenB), isNotNull);
+      expect(store.find(tokenC), isNull);
+      expect(store.find(tokenOther), isNotNull);
+
+      // The DB row for the kept session must still be there too.
+      final rows = await db.query(
+        'server_sessions',
+        where: 'user_id = ?',
+        whereArgs: [5],
+      );
+      expect(rows, hasLength(1));
+      expect(rows.first['token'], tokenB);
+    });
+
+    test(
+        'removeAllSessionsForUser without exceptToken revokes every session',
+        () async {
+      await store.createSession(
+        userId: 9,
+        username: 'eve',
+        role: 'user',
+        canManageUsers: false,
+        canManageWarid: true,
+        canManageSadir: true,
+        canImportExcel: false,
+      );
+      await store.createSession(
+        userId: 9,
+        username: 'eve',
+        role: 'user',
+        canManageUsers: false,
+        canManageWarid: true,
+        canManageSadir: true,
+        canImportExcel: false,
+      );
+
+      final removedCount = await store.removeAllSessionsForUser(9);
+      expect(removedCount, 2);
+
+      final rows = await db.query(
+        'server_sessions',
+        where: 'user_id = ?',
+        whereArgs: [9],
+      );
+      expect(rows, isEmpty);
     });
   });
 }

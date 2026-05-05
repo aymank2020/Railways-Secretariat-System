@@ -238,7 +238,11 @@ Future<void> _handleRequest({
 }) async {
   final response = request.response;
   final timer = Stopwatch()..start();
-  setCorsHeaders(response, allowedOrigins: corsOrigins);
+  setCorsHeaders(
+    response,
+    allowedOrigins: corsOrigins,
+    requestOrigin: request.headers.value('Origin'),
+  );
 
   // Per-request id surfaced to the client (X-Request-Id) and tagged onto
   // both log lines so operators can grep server logs by the value the user
@@ -462,6 +466,7 @@ Future<void> _handleRequest({
       final body = await readJsonBody(request);
       final userId = parseInt(body['userId']?.toString());
       final newPassword = (body['newPassword'] ?? '').toString();
+      final oldPassword = (body['oldPassword'] ?? '').toString();
       if (userId == null || newPassword.trim().isEmpty) {
         throw const ApiException(
           HttpStatus.badRequest,
@@ -475,10 +480,44 @@ Future<void> _handleRequest({
         );
       }
 
+      // Self-change requires the current password — a stolen token must NOT
+      // be enough to rotate the user's password and lock the legitimate
+      // owner out. Admin reset of someone *else*'s password is allowed
+      // without it (admin recovery flow).
+      final isSelfChange = session.userId == userId;
+      if (isSelfChange) {
+        if (oldPassword.isEmpty) {
+          throw const ApiException(
+            HttpStatus.badRequest,
+            'Current password is required.',
+          );
+        }
+        final verified = await authRepository.authenticate(
+          username: session.username,
+          password: oldPassword,
+        );
+        if (verified == null) {
+          throw const ApiException(
+            HttpStatus.unauthorized,
+            'Current password is incorrect.',
+          );
+        }
+      }
+
       await authRepository.updatePassword(
         userId: userId,
         newPassword: newPassword,
       );
+
+      // Revoke every other session for this user so that any other device
+      // that had a live token must re-authenticate with the new password.
+      // Keep the caller's own token live so the response can return cleanly.
+      final callerToken = extractToken(request);
+      await sessionStore.removeAllSessionsForUser(
+        userId,
+        exceptToken: callerToken.isEmpty ? null : callerToken,
+      );
+
       writeJson(response, <String, dynamic>{'ok': true});
       return;
     }

@@ -9,17 +9,41 @@ import 'dart:math';
 /// Flutter Web bundle and the API from the same origin (via nginx) so CORS
 /// headers are not needed there.
 ///
+/// When [allowedOrigins] contains the literal `*`, the wildcard is echoed
+/// back. Otherwise, the request's `Origin` header is matched against the
+/// allow-list and echoed back only on a hit. **The CORS spec only allows a
+/// single origin per response**, so joining multiple entries with `, ` is
+/// invalid and gets rejected by browsers — this is why [requestOrigin] must
+/// be passed in.
+///
 /// To explicitly allow `*`, set the env var `SECRETARIAT_CORS_ORIGINS=*`.
 void setCorsHeaders(
   HttpResponse response, {
   List<String>? allowedOrigins,
+  String? requestOrigin,
 }) {
   if (allowedOrigins != null && allowedOrigins.isNotEmpty) {
-    final origin = allowedOrigins.length == 1
-        ? allowedOrigins.single
-        : allowedOrigins.join(', ');
-    response.headers.set('Access-Control-Allow-Origin', origin);
-    response.headers.set('Vary', 'Origin');
+    if (allowedOrigins.contains('*')) {
+      response.headers.set('Access-Control-Allow-Origin', '*');
+    } else {
+      // The chosen Access-Control-Allow-Origin value depends on the
+      // request's Origin header, so `Vary: Origin` MUST be advertised on
+      // every response — even on a non-match or when no Origin header was
+      // sent. Otherwise an upstream caching proxy could serve a cached
+      // response from origin A (no ACAO header) to a later request from
+      // origin B (which IS in the allow-list), silently breaking CORS.
+      response.headers.set('Vary', 'Origin');
+      if (requestOrigin != null && requestOrigin.isNotEmpty) {
+        final normalised = requestOrigin.trim();
+        final hit = allowedOrigins.firstWhere(
+          (o) => o.trim() == normalised,
+          orElse: () => '',
+        );
+        if (hit.isNotEmpty) {
+          response.headers.set('Access-Control-Allow-Origin', hit);
+        }
+      }
+    }
   }
   // Always advertise the request-method/header allow-list — these are
   // ignored by browsers when no Allow-Origin header is set.
